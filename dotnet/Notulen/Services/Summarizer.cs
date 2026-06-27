@@ -75,6 +75,69 @@ public class Summarizer
         return sb.ToString().Trim();
     }
 
+    /// <summary>
+    /// Corrigeer transcriptiefouten met het lokale taalmodel: verkeerd verstane
+    /// woorden, namen, grammatica en interpunctie — zonder de betekenis te
+    /// wijzigen. Werkt in stukjes zodat ook lange transcripts passen.
+    /// </summary>
+    public async Task<string> CorrectAsync(
+        string transcript, Action<string>? onToken, CancellationToken ct = default)
+    {
+        await EnsureReadyAsync(ct);
+        var executor = new StatelessExecutor(_weights!, _params!);
+
+        var inferenceParams = new InferenceParams
+        {
+            MaxTokens = 1400,
+            AntiPrompts = new List<string> { "<|im_end|>", "<|im_start|>" },
+            SamplingPipeline = new DefaultSamplingPipeline { Temperature = 0.1f },
+        };
+
+        Status?.Invoke("Transcript corrigeren…");
+        var result = new StringBuilder();
+        bool first = true;
+        foreach (var chunk in SplitIntoChunks(transcript, 1500))
+        {
+            ct.ThrowIfCancellationRequested();
+            string prompt =
+                "<|im_start|>system\n" +
+                "Je bent een Nederlandse corrector voor vergadertranscripties. Verbeter " +
+                "verkeerd verstane woorden, namen, grammatica en interpunctie. Verander de " +
+                "betekenis NIET en voeg niets toe of weg. Geef uitsluitend de verbeterde " +
+                "tekst terug.<|im_end|>\n" +
+                "<|im_start|>user\n" + chunk + "<|im_end|>\n" +
+                "<|im_start|>assistant\n";
+
+            if (!first) { result.Append('\n'); onToken?.Invoke("\n"); }
+            first = false;
+
+            await foreach (var token in executor.InferAsync(prompt, inferenceParams, ct))
+            {
+                result.Append(token);
+                onToken?.Invoke(token);
+            }
+        }
+        Status?.Invoke("Correctie klaar.");
+        return result.ToString().Trim();
+    }
+
+    /// <summary>Groepeer regels tot stukken van maximaal ~maxChars tekens.</summary>
+    private static IEnumerable<string> SplitIntoChunks(string text, int maxChars)
+    {
+        var sb = new StringBuilder();
+        foreach (var line in text.Split('\n'))
+        {
+            if (sb.Length > 0 && sb.Length + line.Length > maxChars)
+            {
+                yield return sb.ToString();
+                sb.Clear();
+            }
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append(line);
+        }
+        if (sb.Length > 0) yield return sb.ToString();
+    }
+
     private async Task<string> EnsureModelAsync(CancellationToken ct)
     {
         // Eerst zoeken naar een vooraf geplaatst model (bv. netwerkshare).

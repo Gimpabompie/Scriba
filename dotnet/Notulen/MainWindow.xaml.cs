@@ -17,7 +17,7 @@ public partial class MainWindow : Window
         ["Engels"] = "en",
     };
 
-    private static readonly string[] Models = { "tiny", "base", "small", "medium", "large-v3" };
+    private static readonly string[] Models = { "tiny", "base", "small", "medium", "large-v3-turbo", "large-v3" };
 
     private const string Placeholder =
         "Het transcript verschijnt hier zodra je opneemt of een audiobestand laadt.";
@@ -526,13 +526,25 @@ public partial class MainWindow : Window
     {
         SaveBtn.IsEnabled = enabled;
         SummarizeBtn.IsEnabled = enabled;
+        CorrectBtn.IsEnabled = enabled;
     }
 
     private void Summarize_Click(object sender, RoutedEventArgs e)
     {
         if (_result == null || _result.Count == 0) return;
         var transcript = Minutes.Format(_result, withTimestamps: false);
-        var win = new SummaryWindow(_summarizer, transcript) { Owner = this };
+        var win = new SummaryWindow(_summarizer, "Samenvatting",
+            (onTok, ct) => _summarizer.SummarizeAsync(transcript, onTok, ct)) { Owner = this };
+        win.Show();
+    }
+
+    private void Correct_Click(object sender, RoutedEventArgs e)
+    {
+        if (_result == null || _result.Count == 0) return;
+        // Corrigeer op platte tekst (zonder tijdstempels) voor een schone uitvoer.
+        var transcript = Minutes.Format(_result, withTimestamps: false);
+        var win = new SummaryWindow(_summarizer, "Gecorrigeerd transcript",
+            (onTok, ct) => _summarizer.CorrectAsync(transcript, onTok, ct)) { Owner = this };
         win.Show();
     }
 
