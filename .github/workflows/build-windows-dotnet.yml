@@ -1,6 +1,8 @@
 name: Build Windows EXE (.NET)
 
-# Bouwt de C#/.NET (WPF) versie tot één self-contained notulen.exe.
+# Bouwt de C#/.NET (WPF) versie als self-contained map (geen Python/.NET nodig).
+# We publiceren NIET als single-file: Whisper.net laadt zijn native whisper.dll
+# uit de runtimes-map, en die wordt bij single-file-uitpakken niet gevonden.
 # Handmatig starten kan via tabblad "Actions" -> "Run workflow".
 
 on:
@@ -29,14 +31,11 @@ jobs:
         working-directory: dotnet/Notulen
         run: >
           dotnet publish -c Release -r win-x64 --self-contained true
-          -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:EnableCompressionInSingleFile=true
           -o publish
 
-      - name: EXE uploaden als artefact
+      - name: App uploaden als artefact
         uses: actions/upload-artifact@v4
         with:
-          name: notulen-dotnet-exe
-          path: dotnet/Notulen/publish/Notulen.exe
+          name: notulen-dotnet-app
+          path: dotnet/Notulen/publish/**
           if-no-files-found: error

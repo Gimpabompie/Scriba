@@ -28,12 +28,16 @@ distribueren** variant: één self-contained `.exe`, geen Python nodig.
 
 ## Downloaden (geen Python nodig)
 
-GitHub bouwt de `.exe` automatisch:
+GitHub bouwt de app automatisch:
 
 1. Repo → tabblad **Actions** → workflow **Build Windows EXE (.NET)**.
 2. Open de bovenste (groene) run, of klik **Run workflow**.
-3. Download bij **Artifacts** het bestand **`notulen-dotnet-exe`**.
-4. Pak uit en **dubbelklik `Notulen.exe`**.
+3. Download bij **Artifacts** het bestand **`notulen-dotnet-app`** (een ZIP).
+4. Pak de ZIP **volledig** uit naar een map en **dubbelklik `Notulen.exe`**.
+
+> Houd de bestanden bij elkaar: `Notulen.exe` heeft de map `runtimes\` met de
+> native `whisper.dll` ernaast nodig. Daarom publiceren we als map en niet als
+> single-file (die laadt de native bibliotheek niet betrouwbaar).
 
 Bij de eerste transcriptie wordt het Whisper-model eenmalig gedownload naar
 `%APPDATA%\Notulen\modellen`; daarna werkt alles offline.
