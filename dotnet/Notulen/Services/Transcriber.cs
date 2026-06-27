@@ -55,7 +55,8 @@ public class Transcriber
         Action<TranscriptSegment>? onSegment,
         CancellationToken ct = default,
         double timeOffsetSeconds = 0,
-        bool announce = true)
+        bool announce = true,
+        string contextPrompt = "")
     {
         await EnsureReadyAsync(modelSize, ct);
 
@@ -63,8 +64,13 @@ public class Transcriber
         var builder = _factory!.CreateBuilder()
             .WithLanguage(string.IsNullOrEmpty(language) ? "auto" : language);
 
-        if (!string.IsNullOrWhiteSpace(vocabulary))
-            builder = builder.WithPrompt(BuildPrompt(vocabulary));
+        // Prompt = woordenlijst + (bij live) de voorgaande tekst als context.
+        var promptParts = new List<string>();
+        var vocabPrompt = BuildPrompt(vocabulary);
+        if (!string.IsNullOrEmpty(vocabPrompt)) promptParts.Add(vocabPrompt);
+        if (!string.IsNullOrWhiteSpace(contextPrompt)) promptParts.Add(contextPrompt.Trim());
+        if (promptParts.Count > 0)
+            builder = builder.WithPrompt(string.Join("\n", promptParts));
 
         using var processor = builder.Build();
 

@@ -177,7 +177,7 @@ public partial class MainWindow : Window
             {
                 SetStatus("Laatste stuk transcriberen…", Warn);
                 var tail = samples[_liveCutSamples..];
-                await TranscribeLiveChunk(tail, _liveCutSamples / 16000.0, CancellationToken.None);
+                await TranscribeLiveChunk(tail, _liveCutSamples / 16000.0, LiveContextTail(), CancellationToken.None);
             }
             _result = _liveSegments;
             EnableResultButtons(_liveSegments.Count > 0);
@@ -196,8 +196,8 @@ public partial class MainWindow : Window
     // ---------- Live-transcriptie ----------
     private async Task LiveLoop(CancellationToken token)
     {
-        const double minChunk = 2.5;  // niet te korte stukjes
-        const double maxChunk = 18.0; // forceer een knip bij doorpraten
+        const double minChunk = 4.0;  // langere stukjes = meer context = beter
+        const double maxChunk = 22.0; // forceer een knip bij doorpraten
         const double silenceCut = 0.6; // knip na een pauze
 
         try
@@ -218,8 +218,13 @@ public partial class MainWindow : Window
                     var chunk = _recorder.Snapshot(_liveCutSamples, pending);
                     double offset = _liveCutSamples / 16000.0;
                     _liveCutSamples = total;
-                    if (chunk.Length > 0)
-                        await TranscribeLiveChunk(chunk, offset, token);
+
+                    // Sla (vrijwel) stille stukken over: voorkomt verzonnen tekst.
+                    if (chunk.Length == 0 || PeakOf(chunk) < 0.02f) continue;
+
+                    // Geef de laatste woorden mee als context voor betere aansluiting.
+                    string context = LiveContextTail();
+                    await TranscribeLiveChunk(chunk, offset, context, token);
                 }
             }
         }
@@ -233,7 +238,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task TranscribeLiveChunk(float[] chunk, double offsetSeconds, CancellationToken token)
+    private async Task TranscribeLiveChunk(
+        float[] chunk, double offsetSeconds, string context, CancellationToken token)
     {
         await _transcriber.TranscribeAsync(
             chunk, _liveModel, _liveLang, _liveVocab,
@@ -243,7 +249,25 @@ public partial class MainWindow : Window
                 AppendSegment(seg, _liveTimestamps);
                 EnableResultButtons(true);
             }),
-            token, offsetSeconds, announce: false);
+            token, offsetSeconds, announce: false, contextPrompt: context);
+    }
+
+    private static float PeakOf(float[] samples)
+    {
+        float peak = 0;
+        foreach (var s in samples)
+        {
+            float a = Math.Abs(s);
+            if (a > peak) peak = a;
+        }
+        return peak;
+    }
+
+    private string LiveContextTail()
+    {
+        // Laatste ~200 tekens van de tot nu toe herkende tekst.
+        var text = string.Join(" ", _liveSegments.Select(s => s.Text));
+        return text.Length > 200 ? text[^200..] : text;
     }
 
     private void UpdateLevel(double dbfs, double fraction, bool clipping)
