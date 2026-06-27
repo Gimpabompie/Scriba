@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private bool _keepAudio = true;
     private string? _tempAudio;
 
+    private static readonly Brush Accent = (Brush)new BrushConverter().ConvertFrom("#4F46E5")!;
     private static readonly Brush Good = (Brush)new BrushConverter().ConvertFrom("#16A34A")!;
     private static readonly Brush Warn = (Brush)new BrushConverter().ConvertFrom("#F59E0B")!;
     private static readonly Brush Bad = (Brush)new BrushConverter().ConvertFrom("#DC2626")!;
@@ -56,6 +57,8 @@ public partial class MainWindow : Window
             Dispatcher.Invoke(() => UpdateLevel(db, frac, clip));
         _transcriber.Status += msg =>
             Dispatcher.Invoke(() => SetStatus(msg, _busy ? Warn : Good));
+        _transcriber.DownloadProgress += frac =>
+            Dispatcher.Invoke(() => ShowDownloadProgress(frac));
 
         PopulateDevices();
         Closing += (_, _) => OnClosing();
@@ -201,7 +204,29 @@ public partial class MainWindow : Window
         {
             SetBusy(false);
             CleanupTemp();
+            ResetLevelBar();
         }
+    }
+
+    private void ShowDownloadProgress(double fraction)
+    {
+        LevelBar.Foreground = Accent;
+        if (fraction < 0)
+        {
+            LevelBar.IsIndeterminate = true; // onbekende grootte
+        }
+        else
+        {
+            LevelBar.IsIndeterminate = false;
+            LevelBar.Value = Math.Clamp(fraction * 100, 0, 100);
+        }
+    }
+
+    private void ResetLevelBar()
+    {
+        LevelBar.IsIndeterminate = false;
+        LevelBar.Value = 0;
+        LevelBar.Foreground = Good;
     }
 
     private void AppendSegment(TranscriptSegment seg, bool timestamps)

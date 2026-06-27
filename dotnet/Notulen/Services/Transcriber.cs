@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -14,6 +15,9 @@ public record TranscriptSegment(TimeSpan Start, TimeSpan End, string Text);
 public class Transcriber
 {
     public event Action<string>? Status;
+
+    /// <summary>Voortgang van de modeldownload (0..1, of -1 als onbekend).</summary>
+    public event Action<double>? DownloadProgress;
 
     private static readonly Dictionary<string, string> ModelFiles = new()
     {
@@ -69,15 +73,75 @@ public class Transcriber
 
         Status?.Invoke($"Model '{size}' wordt eenmalig gedownload…");
         var url = $"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{file}";
-        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+
+        // Geen totale timeout: grote modellen (medium ~1,5 GB) mogen lang duren;
+        // we leunen op de CancellationToken om te kunnen afbreken.
+        using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
         resp.EnsureSuccessStatusCode();
 
+        long total = resp.Content.Headers.ContentLength ?? -1L;
         var tmp = path + ".part";
+
         await using (var fs = File.Create(tmp))
-            await resp.Content.CopyToAsync(fs, ct);
+        await using (var src = await resp.Content.ReadAsStreamAsync(ct))
+        {
+            var buffer = new byte[81920];
+            long readTotal = 0;
+            int read;
+            var sw = Stopwatch.StartNew();
+            var lastReport = TimeSpan.FromSeconds(-1);
+
+            while ((read = await src.ReadAsync(buffer, ct)) > 0)
+            {
+                await fs.WriteAsync(buffer.AsMemory(0, read), ct);
+                readTotal += read;
+
+                // Niet bij elke blok melden; ~3x per seconde is ruim genoeg.
+                if (sw.Elapsed - lastReport >= TimeSpan.FromMilliseconds(350))
+                {
+                    lastReport = sw.Elapsed;
+                    ReportDownload(size, readTotal, total, sw.Elapsed);
+                }
+            }
+            ReportDownload(size, readTotal, total, sw.Elapsed);
+        }
+
         File.Move(tmp, path, true);
+        DownloadProgress?.Invoke(1.0);
         return path;
+    }
+
+    private void ReportDownload(string size, long read, long total, TimeSpan elapsed)
+    {
+        double mb = read / 1048576.0;
+        double secs = Math.Max(0.001, elapsed.TotalSeconds);
+        double speed = mb / secs; // MB/s
+
+        if (total > 0)
+        {
+            double totMb = total / 1048576.0;
+            double pct = read * 100.0 / total;
+            double etaSec = speed > 0 ? (totMb - mb) / speed : 0;
+            DownloadProgress?.Invoke(read / (double)total);
+            Status?.Invoke(
+                $"Model '{size}' downloaden… {pct:0}%  " +
+                $"({mb:0}/{totMb:0} MB · {speed:0.0} MB/s · nog ~{FormatEta(etaSec)})");
+        }
+        else
+        {
+            DownloadProgress?.Invoke(-1);
+            Status?.Invoke($"Model '{size}' downloaden… {mb:0} MB ({speed:0.0} MB/s)");
+        }
+    }
+
+    private static string FormatEta(double seconds)
+    {
+        if (seconds <= 0 || double.IsNaN(seconds) || double.IsInfinity(seconds)) return "—";
+        var t = TimeSpan.FromSeconds(seconds);
+        if (t.TotalHours >= 1) return $"{(int)t.TotalHours}u {t.Minutes}m";
+        if (t.TotalMinutes >= 1) return $"{t.Minutes}m {t.Seconds}s";
+        return $"{t.Seconds}s";
     }
 
     private static string BuildPrompt(string vocabulary)
