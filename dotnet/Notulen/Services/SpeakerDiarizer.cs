@@ -39,9 +39,9 @@ public class SpeakerDiarizer
 
         return await Task.Run(() =>
         {
-            var result = _sd!.Process(samples);
+            var segments = _sd!.Process(samples);
             var turns = new List<SpeakerTurn>();
-            foreach (var s in result.SortByStartTime())
+            foreach (var s in segments.OrderBy(x => x.Start))
                 turns.Add(new SpeakerTurn(s.Start, s.End, s.Speaker));
             return turns;
         }, ct);
