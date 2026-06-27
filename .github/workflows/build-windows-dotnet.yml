@@ -1,0 +1,42 @@
+name: Build Windows EXE (.NET)
+
+# Bouwt de C#/.NET (WPF) versie tot één self-contained notulen.exe.
+# Handmatig starten kan via tabblad "Actions" -> "Run workflow".
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/offline-tts-note-recorder-lhdro5
+    paths:
+      - "dotnet/**"
+      - ".github/workflows/build-windows-dotnet.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: .NET 8 installeren
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Herstellen & publiceren
+        working-directory: dotnet/Notulen
+        run: >
+          dotnet publish -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -o publish
+
+      - name: EXE uploaden als artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notulen-dotnet-exe
+          path: dotnet/Notulen/publish/Notulen.exe
+          if-no-files-found: error

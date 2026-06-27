@@ -8,6 +8,11 @@ on:
   push:
     branches:
       - claude/offline-tts-note-recorder-lhdro5
+    paths:
+      - "notulen/**"
+      - "app_entry.py"
+      - "requirements.txt"
+      - ".github/workflows/build-windows.yml"
 
 jobs:
   build:
