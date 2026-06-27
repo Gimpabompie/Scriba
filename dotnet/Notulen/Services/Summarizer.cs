@@ -85,8 +85,8 @@ public class Summarizer
         var path = Path.Combine(AppSettings.ModelsDir, ModelFile);
 
         Status?.Invoke("Samenvattingsmodel wordt eenmalig gedownload…");
-        // Interne spiegel/eigen URL mogelijk via NOTULEN_LLM_URL.
-        var url = Environment.GetEnvironmentVariable("NOTULEN_LLM_URL") ?? ModelUrl;
+        // Interne spiegel/eigen URL mogelijk via SCRIBA_LLM_URL.
+        var url = Environment.GetEnvironmentVariable("SCRIBA_LLM_URL") ?? ModelUrl;
         using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
         resp.EnsureSuccessStatusCode();

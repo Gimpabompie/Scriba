@@ -1,7 +1,7 @@
 <Window x:Class="Notulen.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Notulen — offline spraak naar tekst"
+        Title="Scriba — offline spraak naar tekst"
         Height="760" Width="880" MinHeight="620" MinWidth="740"
         Background="{StaticResource Bg}"
         FontFamily="{StaticResource UiFont}">
@@ -16,7 +16,7 @@
         <!-- Koptekst -->
         <Border Grid.Row="0" Background="{StaticResource HeaderBrush}">
             <StackPanel Margin="20,16">
-                <TextBlock Text="📝  Notulen" Foreground="White"
+                <TextBlock Text="📝  Scriba" Foreground="White"
                            FontSize="22" FontWeight="Bold" />
                 <TextBlock Text="Offline spraak naar tekst · Nederlands &amp; Engels"
                            Foreground="#FFE0E7FF" FontSize="12" Margin="0,2,0,0" />

@@ -9,7 +9,7 @@ namespace Notulen.Services;
 /// </summary>
 public class AppSettings
 {
-    public string Language { get; set; } = "Automatisch detecteren";
+    public string Language { get; set; } = "Nederlands";
     public string Model { get; set; } = "small";
     public string Vocabulary { get; set; } = "";
     public bool Timestamps { get; set; } = true;
@@ -18,6 +18,11 @@ public class AppSettings
     public string? Device { get; set; }
 
     private static string Dir =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Scriba");
+
+    // Oude datamap (vóór de naam 'Scriba'); we blijven hier naar modellen zoeken
+    // zodat een eerder gedownload model niet opnieuw hoeft.
+    private static string LegacyDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Notulen");
 
     private static string ConfigPath => Path.Combine(Dir, "config.json");
@@ -34,10 +39,11 @@ public class AppSettings
     /// </summary>
     public static IEnumerable<string> ModelSearchDirs()
     {
-        var env = Environment.GetEnvironmentVariable("NOTULEN_MODELS_DIR");
+        var env = Environment.GetEnvironmentVariable("SCRIBA_MODELS_DIR");
         if (!string.IsNullOrWhiteSpace(env)) yield return env;
         yield return Path.Combine(AppContext.BaseDirectory, "modellen"); // naast de app
-        yield return ModelsDir;                                          // %APPDATA%
+        yield return ModelsDir;                                          // %APPDATA%\Scriba
+        yield return Path.Combine(LegacyDir, "modellen");                // oude %APPDATA%\Notulen
     }
 
     /// <summary>Zoek een bestaand modelbestand; geef het pad terug of null.</summary>

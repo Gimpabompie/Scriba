@@ -2,9 +2,9 @@
 ; Installeert zonder adminrechten (per gebruiker) met snelkoppelingen.
 ; Stil installeren (voor GPO/Intune): Notulen-Setup.exe /VERYSILENT /NORESTART
 
-#define MyAppName "Notulen"
+#define MyAppName "Scriba"
 #define MyAppVersion "1.0.0"
-#define MyAppExe "Notulen.exe"
+#define MyAppExe "Scriba.exe"
 #define MyAppPublisher "Intern"
 
 [Setup]
@@ -12,10 +12,10 @@ AppId={{8F4A1E22-6B3D-4C7E-9A11-2D5C7E9B1A30}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\Notulen
-DefaultGroupName=Notulen
+DefaultDirName={autopf}\Scriba
+DefaultGroupName=Scriba
 DisableProgramGroupPage=yes
-OutputBaseFilename=Notulen-Setup
+OutputBaseFilename=Scriba-Setup
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
@@ -35,9 +35,9 @@ Name: "desktopicon"; Description: "Snelkoppeling op het bureaublad"; GroupDescri
 Source: "..\Notulen\publish\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{group}\Notulen"; Filename: "{app}\{#MyAppExe}"
-Name: "{group}\Notulen verwijderen"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Notulen"; Filename: "{app}\{#MyAppExe}"; Tasks: desktopicon
+Name: "{group}\Scriba"; Filename: "{app}\{#MyAppExe}"
+Name: "{group}\Scriba verwijderen"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\Scriba"; Filename: "{app}\{#MyAppExe}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExe}"; Description: "Notulen nu starten"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExe}"; Description: "Scriba nu starten"; Flags: nowait postinstall skipifsilent

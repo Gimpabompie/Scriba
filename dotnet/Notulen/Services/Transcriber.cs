@@ -102,8 +102,8 @@ public class Transcriber
         var path = Path.Combine(AppSettings.ModelsDir, file);
 
         Status?.Invoke($"Model '{size}' wordt eenmalig gedownload…");
-        // Interne spiegel mogelijk via NOTULEN_MODEL_BASEURL.
-        var baseUrl = Environment.GetEnvironmentVariable("NOTULEN_MODEL_BASEURL")?.TrimEnd('/')
+        // Interne spiegel mogelijk via SCRIBA_MODEL_BASEURL.
+        var baseUrl = Environment.GetEnvironmentVariable("SCRIBA_MODEL_BASEURL")?.TrimEnd('/')
                       ?? "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
         var url = $"{baseUrl}/{file}";
 
