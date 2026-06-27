@@ -22,6 +22,10 @@ distribueren** variant: één self-contained `.exe`, geen Python nodig.
 - 🇳🇱🇬🇧 Nederlands, Engels of automatisch.
 - 📒 Woordenlijst (namen/jargon) — wordt onthouden.
 - ⏱️ Tijdstempels aan/uit; opslaan als `.txt` of `.md`.
+- ⚡ **Live transcriberen** tijdens het spreken (knipt op stiltes).
+- ✨ **Samenvatten** met een lokaal taalmodel: korte samenvatting, besluiten en
+  actiepunten in het Nederlands. Het samenvattingsmodel (~2 GB) wordt eenmalig
+  gedownload; daarna offline.
 
 > Sprekerherkenning ("wie zei wat") zit nog niet in deze .NET-versie; die komt
 > eventueel later. De Python-versie in de map hierboven heeft die functie wel.

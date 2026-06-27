@@ -129,6 +129,9 @@
                                 <Button x:Name="ClearBtn" Content="Wissen"
                                         Style="{StaticResource SecondaryButton}"
                                         Margin="0,0,8,0" Click="Clear_Click" />
+                                <Button x:Name="SummarizeBtn" Content="✨  Vat samen"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Margin="0,0,8,0" IsEnabled="False" Click="Summarize_Click" />
                                 <Button x:Name="SaveBtn" Content="💾  Notulen opslaan"
                                         Style="{StaticResource SecondaryButton}"
                                         IsEnabled="False" Click="Save_Click" />

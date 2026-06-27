@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private readonly AudioRecorder _recorder = new();
     private readonly Transcriber _transcriber = new();
+    private readonly Summarizer _summarizer = new();
 
     private List<TranscriptSegment>? _result;
     private bool _busy;
@@ -179,7 +180,7 @@ public partial class MainWindow : Window
                 await TranscribeLiveChunk(tail, _liveCutSamples / 16000.0, CancellationToken.None);
             }
             _result = _liveSegments;
-            SaveBtn.IsEnabled = _liveSegments.Count > 0;
+            EnableResultButtons(_liveSegments.Count > 0);
             SetStatus(_recorder.Clipped ? "Klaar. (let op: oversturing gehoord)" : "Klaar.", Good);
             CleanupTemp();
             ResetLevelBar();
@@ -240,7 +241,7 @@ public partial class MainWindow : Window
             {
                 _liveSegments.Add(seg);
                 AppendSegment(seg, _liveTimestamps);
-                SaveBtn.IsEnabled = true;
+                EnableResultButtons(true);
             }),
             token, offsetSeconds, announce: false);
     }
@@ -302,7 +303,7 @@ public partial class MainWindow : Window
                 samples, model, language, vocab,
                 seg => Dispatcher.Invoke(() => AppendSegment(seg, timestamps))));
             _result = segments;
-            SaveBtn.IsEnabled = segments.Count > 0;
+            EnableResultButtons(segments.Count > 0);
             SetStatus("Klaar.", Good);
         }
         catch (Exception ex)
@@ -379,7 +380,21 @@ public partial class MainWindow : Window
         TranscriptBox.Foreground = (Brush)FindResource("Ink");
         _hasPlaceholder = false;
         _result = null;
-        SaveBtn.IsEnabled = false;
+        EnableResultButtons(false);
+    }
+
+    private void EnableResultButtons(bool enabled)
+    {
+        SaveBtn.IsEnabled = enabled;
+        SummarizeBtn.IsEnabled = enabled;
+    }
+
+    private void Summarize_Click(object sender, RoutedEventArgs e)
+    {
+        if (_result == null || _result.Count == 0) return;
+        var transcript = Minutes.Format(_result, withTimestamps: false);
+        var win = new SummaryWindow(_summarizer, transcript) { Owner = this };
+        win.Show();
     }
 
     private void ClearPlaceholder()
