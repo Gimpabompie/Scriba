@@ -9,6 +9,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - claude/offline-tts-note-recorder-lhdro5
     paths:
       - "dotnet/**"
