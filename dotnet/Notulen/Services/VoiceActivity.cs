@@ -24,20 +24,25 @@ public class VoiceActivity
 
     private const int Window = 512; // Silero-vensterlengte bij 16 kHz
 
-    private VadModelConfig? _config;
+    private string? _modelPath;
 
     public async Task EnsureReadyAsync(CancellationToken ct = default)
     {
-        if (_config != null) return;
-        var model = await EnsureModelAsync(ct);
+        if (_modelPath != null) return;
+        _modelPath = await EnsureModelAsync(ct);
+    }
 
-        _config = new VadModelConfig();
-        _config.SileroVad.Model = model;
-        _config.SileroVad.Threshold = 0.5f;
-        _config.SileroVad.MinSilenceDuration = 0.5f;
-        _config.SileroVad.MinSpeechDuration = 0.25f;
-        _config.SileroVad.WindowSize = Window;
-        _config.SampleRate = SampleHelpers.TargetRate;
+    private VadModelConfig BuildConfig()
+    {
+        // VadModelConfig is een struct: lokaal opbouwen (niet als veld bewaren).
+        var config = new VadModelConfig();
+        config.SileroVad.Model = _modelPath!;
+        config.SileroVad.Threshold = 0.5f;
+        config.SileroVad.MinSilenceDuration = 0.5f;
+        config.SileroVad.MinSpeechDuration = 0.25f;
+        config.SileroVad.WindowSize = Window;
+        config.SampleRate = SampleHelpers.TargetRate;
+        return config;
     }
 
     /// <summary>Detecteer spraakstukken in 16 kHz mono samples.</summary>
@@ -49,7 +54,7 @@ public class VoiceActivity
         return await Task.Run(() =>
         {
             // Buffer ruim genoeg voor lange spraakstukken.
-            var vad = new VoiceActivityDetector(_config!, 120.0f);
+            var vad = new VoiceActivityDetector(BuildConfig(), 120.0f);
             var chunks = new List<SpeechChunk>();
 
             void Drain()
