@@ -10,6 +10,9 @@
     <RootNamespace>Notulen</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Version>1.0.0</Version>
+    <!-- LLamaSharp.Backend.Cpu levert meerdere CPU-varianten (avx/avx2/…) van
+         dezelfde native DLL's; sta dat toe bij publiceren (NETSDK1152). -->
+    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
   </PropertyGroup>
 
   <ItemGroup>
