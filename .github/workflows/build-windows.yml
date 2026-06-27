@@ -1,0 +1,46 @@
+name: Build Windows EXE
+
+# Bouwt automatisch een Windows .exe en plaatst die als download-artefact.
+# Handmatig starten kan via tabblad "Actions" -> deze workflow -> "Run workflow".
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/offline-tts-note-recorder-lhdro5
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python installeren
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Afhankelijkheden installeren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: EXE bouwen
+        run: >
+          pyinstaller --noconfirm --onefile --name notulen
+          --collect-all faster_whisper
+          --collect-all ctranslate2
+          --collect-all av
+          --collect-all tokenizers
+          --collect-all onnxruntime
+          --collect-all sounddevice
+          app_entry.py
+
+      - name: EXE uploaden als artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notulen-windows-exe
+          path: dist/notulen.exe
+          if-no-files-found: error

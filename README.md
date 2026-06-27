@@ -24,7 +24,24 @@ automatische taaldetectie).
 - 💾 Opslaan als `.txt` of `.md`.
 - 🧠 Keuze uit modelgroottes (`tiny` … `large-v3`).
 
-## Installatie
+## Snelste weg: kant-en-klare Windows-app (.exe)
+
+Je hoeft geen Python te installeren. GitHub bouwt automatisch een `notulen.exe`:
+
+1. Open de repo op GitHub → tabblad **Actions**.
+2. Kies links de workflow **Build Windows EXE** en open de bovenste (groene) run.
+   Loopt er nog geen? Klik **Run workflow** en wacht een paar minuten.
+3. Onderaan bij **Artifacts** download je **`notulen-windows-exe`** (een ZIP).
+4. Pak uit en **dubbelklik `notulen.exe`**.
+
+> Windows SmartScreen kan waarschuwen omdat de .exe niet ondertekend is: klik
+> **Meer info → Toch uitvoeren**. Bij de eerste transcriptie wordt het taalmodel
+> eenmalig gedownload; daarna werkt alles offline.
+
+Liever zelf bouwen op je eigen Windows-laptop? Dubbelklik dan `build_windows.bat`
+(vereist wél Python). De .exe komt in de map `dist\`.
+
+## Installatie (vanuit broncode)
 
 Vereist Python 3.9+.
 
