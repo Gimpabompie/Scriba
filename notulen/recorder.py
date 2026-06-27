@@ -1,8 +1,10 @@
-"""Microfoon-/systeemaudio-opname naar een numpy-buffer.
+"""Microfoon-/systeemaudio-opname naar een WAV-bestand.
 
-We nemen mono audio op met 16 kHz (wat Whisper verwacht), meten live het
-niveau voor de VU-meter, en schrijven optioneel alles incrementeel naar een
-WAV-bestand zodat een opname nooit verloren gaat als de transcriptie faalt.
+We nemen op met de *eigen* samplerate van het gekozen apparaat (belangrijk:
+WASAPI-loopback op Windows weigert een afwijkende rate zoals 16 kHz) en
+schrijven incrementeel naar WAV. De transcriptie leest dat bestand en resamplet
+zelf netjes naar 16 kHz. Zo gaat een opname ook nooit verloren als de
+transcriptie faalt.
 """
 
 from __future__ import annotations
@@ -13,32 +15,24 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from .audio_io import (
-    CLIP_PEAK,
-    SAMPLE_RATE,
-    AudioDevice,
-    WavWriter,
-    rms_to_dbfs,
-)
-
-CHANNELS = 1
+from .audio_io import CLIP_PEAK, AudioDevice, WavWriter, meter_fraction, rms_to_dbfs
 
 # Callback-types
 LevelCallback = Callable[[float, float, bool], None]  # (dbfs, fractie, clipping)
 
 
 class Recorder:
-    """Neemt audio op tot het stoppen, met niveaumeting en optionele backup."""
+    """Neemt audio op tot het stoppen, met niveaumeting en WAV-backup."""
 
-    def __init__(self, sample_rate: int = SAMPLE_RATE) -> None:
-        self.sample_rate = sample_rate
-        self._frames: list[np.ndarray] = []
+    def __init__(self) -> None:
         self._lock = threading.Lock()
         self._stream = None
         self._writer: Optional[WavWriter] = None
         self._on_level: Optional[LevelCallback] = None
         self._clipped = False
-        self.backup_path: Optional[str] = None
+        self._wrote_audio = False
+        self.path: Optional[str] = None
+        self.sample_rate: int = 16_000
 
     @property
     def is_recording(self) -> bool:
@@ -51,36 +45,47 @@ class Recorder:
     def _callback(self, indata, frames, time_info, status) -> None:  # noqa: ANN001
         data = indata.copy()  # sounddevice hergebruikt de buffer
         with self._lock:
-            self._frames.append(data)
             if self._writer is not None:
                 try:
                     self._writer.write(data)
+                    self._wrote_audio = True
                 except Exception:
                     pass  # backup mag de opname nooit breken
 
         # Niveaumeting voor de VU-meter.
-        if self._on_level is not None:
+        if self._on_level is not None and data.size:
             mono = data.mean(axis=1) if data.ndim > 1 else data
-            rms = float(np.sqrt(np.mean(np.square(mono)))) if mono.size else 0.0
-            peak = float(np.max(np.abs(mono))) if mono.size else 0.0
+            rms = float(np.sqrt(np.mean(np.square(mono))))
+            peak = float(np.max(np.abs(mono)))
             clipping = peak >= CLIP_PEAK
             if clipping:
                 self._clipped = True
             dbfs = rms_to_dbfs(rms)
-            from .audio_io import meter_fraction
-
             try:
                 self._on_level(dbfs, meter_fraction(dbfs), clipping)
             except Exception:
                 pass
 
+    def _resolve_params(self, sd, device: Optional[AudioDevice]):
+        """Bepaal apparaat-index, kanalen en samplerate voor de stream."""
+        if device is not None:
+            info = sd.query_devices(device.index)
+            channels = max(1, device.channels)
+            index = device.index
+        else:
+            info = sd.query_devices(kind="input")
+            channels = min(2, max(1, int(info["max_input_channels"])))
+            index = None
+        sample_rate = int(info.get("default_samplerate") or 16_000)
+        return index, channels, sample_rate
+
     def start(
         self,
+        path: str | Path,
         device: Optional[AudioDevice] = None,
         on_level: Optional[LevelCallback] = None,
-        backup_path: Optional[str | Path] = None,
     ) -> None:
-        """Begin met opnemen van het gekozen apparaat (of de standaard-microfoon)."""
+        """Begin met opnemen naar `path` (WAV) van het gekozen apparaat."""
         if self._stream is not None:
             raise RuntimeError("Opname is al bezig.")
 
@@ -93,37 +98,49 @@ class Recorder:
                 f"(onderliggende fout: {exc})"
             ) from exc
 
+        index, channels, sample_rate = self._resolve_params(sd, device)
+
+        # Windows WASAPI-loopback voor systeemaudio (andere OS'en: monitor-bron).
+        extra_settings = None
+        if device is not None and device.is_loopback:
+            try:
+                extra_settings = sd.WasapiSettings(loopback=True)
+            except Exception:
+                extra_settings = None
+
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._on_level = on_level
         self._clipped = False
+        self._wrote_audio = False
+        self.path = str(path)
+        self.sample_rate = sample_rate
         with self._lock:
-            self._frames = []
-            self._writer = WavWriter(backup_path, self.sample_rate) if backup_path else None
-        self.backup_path = str(backup_path) if backup_path else None
+            self._writer = WavWriter(path, sample_rate)
 
-        # Windows WASAPI-loopback voor systeemaudio.
-        extra_settings = None
-        device_index = device.index if device else None
-        in_channels = CHANNELS
-        if device is not None:
-            in_channels = min(2, max(1, device.channels))
-            if device.is_loopback:
-                try:
-                    extra_settings = sd.WasapiSettings(loopback=True)
-                except Exception:
-                    extra_settings = None  # niet-Windows: monitor-bron werkt direct
+        try:
+            self._stream = sd.InputStream(
+                samplerate=sample_rate,
+                channels=channels,
+                dtype="float32",
+                device=index,
+                callback=self._callback,
+                extra_settings=extra_settings,
+            )
+            self._stream.start()
+        except Exception as exc:
+            with self._lock:
+                if self._writer is not None:
+                    self._writer.close()
+                    self._writer = None
+            self._stream = None
+            raise RuntimeError(
+                f"Kon de audiobron niet openen ({exc}). "
+                "Controleer of het juiste apparaat gekozen is en niet door een "
+                "andere app wordt geblokkeerd."
+            ) from exc
 
-        self._stream = sd.InputStream(
-            samplerate=self.sample_rate,
-            channels=in_channels,
-            dtype="float32",
-            device=device_index,
-            callback=self._callback,
-            extra_settings=extra_settings,
-        )
-        self._stream.start()
-
-    def stop(self) -> np.ndarray:
-        """Stop de opname en geef de volledige audio terug als float32 mono-array."""
+    def stop(self) -> Optional[str]:
+        """Stop de opname en geef het pad naar het WAV-bestand terug (of None)."""
         if self._stream is None:
             raise RuntimeError("Er is geen opname bezig.")
 
@@ -133,16 +150,8 @@ class Recorder:
         self._on_level = None
 
         with self._lock:
-            frames = self._frames
-            self._frames = []
             if self._writer is not None:
                 self._writer.close()
                 self._writer = None
 
-        if not frames:
-            return np.zeros(0, dtype=np.float32)
-
-        audio = np.concatenate(frames, axis=0)
-        if audio.ndim > 1:
-            audio = audio.mean(axis=1)
-        return audio.astype(np.float32)
+        return self.path if self._wrote_audio else None

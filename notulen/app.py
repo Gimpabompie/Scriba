@@ -62,6 +62,8 @@ class NotulenApp:
         self.devices = []  # lijst AudioDevice
         self._events: "queue.Queue[tuple]" = queue.Queue()
         self._busy = False
+        self._keep_audio = True
+        self._temp_audio: str | None = None  # te verwijderen na transcriptie
 
         self._build_ui()
         self._refresh_devices()
@@ -221,6 +223,7 @@ class NotulenApp:
                 elif kind == "error":
                     self._busy = False
                     self._set_controls_enabled(True)
+                    self._cleanup_temp_audio()
                     self.messagebox.showerror("Fout", payload)
                     self.status_var.set("Fout opgetreden.")
         except queue.Empty:
@@ -240,16 +243,17 @@ class NotulenApp:
     def _start_record(self) -> None:
         if self._busy:
             return
-        backup = None
-        if self.save_audio_var.get():
-            OPNAMES_DIR.mkdir(parents=True, exist_ok=True)
-            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            backup = str(OPNAMES_DIR / f"notulen-{stamp}.wav")
+        # Altijd naar WAV opnemen (crash-veilig). Bij 'niet bewaren' ruimen we
+        # het bestand na de transcriptie weer op.
+        OPNAMES_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = str(OPNAMES_DIR / f"notulen-{stamp}.wav")
+        self._keep_audio = bool(self.save_audio_var.get())
         try:
             self.recorder.start(
+                path,
                 device=self._selected_device(),
                 on_level=lambda d, f, c: self._post("level", (d, f, c)),
-                backup_path=backup,
             )
         except RuntimeError as exc:
             self.messagebox.showerror("Audiobron", str(exc))
@@ -257,24 +261,26 @@ class NotulenApp:
         self.record_btn.configure(text="■ Opname stoppen")
         self.file_btn.configure(state="disabled")
         msg = "Opname loopt… spreek maar."
-        if backup:
-            msg += f"  (backup: {backup})"
+        if self._keep_audio:
+            msg += f"  (opslag: {path})"
         self.status_var.set(msg)
 
     def _stop_record(self) -> None:
-        audio = self.recorder.stop()
+        path = self.recorder.stop()
         self.record_btn.configure(text="● Opname starten")
         self.file_btn.configure(state="normal")
         self.level_bar["value"] = 0
         self.level_hint.set("")
-        if audio.size == 0:
+        if not path:
             self.status_var.set("Geen audio opgenomen.")
             return
         if self.recorder.clipped:
             self.status_var.set("Let op: oversturing gedetecteerd. Transcriberen…")
         else:
             self.status_var.set("Opname gestopt. Transcriberen…")
-        self._start_transcription(audio)
+        # Tijdelijk opnamebestand opruimen na transcriptie indien niet bewaren.
+        self._temp_audio = None if self._keep_audio else path
+        self._start_transcription(path)
 
     def _update_level(self, dbfs: float, fraction: float, clipping: bool) -> None:
         self.level_bar["value"] = max(0, min(100, int(fraction * 100)))
@@ -297,6 +303,7 @@ class NotulenApp:
             ],
         )
         if path:
+            self._temp_audio = None  # nooit een door de gebruiker geladen bestand wissen
             self._start_transcription(path)
 
     # ---------- Transcriptie ----------
@@ -361,6 +368,16 @@ class NotulenApp:
         self._busy = False
         self._set_controls_enabled(True)
         self.save_btn.configure(state="normal")
+        self._cleanup_temp_audio()
+
+    def _cleanup_temp_audio(self) -> None:
+        """Verwijder een tijdelijk opnamebestand (alleen als 'niet bewaren')."""
+        if self._temp_audio:
+            try:
+                Path(self._temp_audio).unlink(missing_ok=True)
+            except Exception:
+                pass
+            self._temp_audio = None
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
