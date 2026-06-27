@@ -27,6 +27,10 @@ makkelijk te distribueren** variant: een self-contained app, geen Python nodig.
 - ✨ **Samenvatten** met een lokaal taalmodel: korte samenvatting, besluiten en
   actiepunten in het Nederlands. Het samenvattingsmodel (~2 GB) wordt eenmalig
   gedownload; daarna offline.
+- 🪄 **Corrigeren**: laat het lokale taalmodel transcriptiefouten (woorden,
+  namen, grammatica) herstellen op basis van context.
+- 🎚️ Modelkeuze t/m **`large-v3-turbo`** (nauwkeuriger dan medium, veel lichter
+  dan `large-v3`).
 
 ## Downloaden (geen Python nodig)
 

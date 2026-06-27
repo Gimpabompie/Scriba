@@ -5,18 +5,30 @@ using Notulen.Services;
 
 namespace Notulen;
 
+/// <summary>
+/// Toont een streamend tekstresultaat van het lokale taalmodel (samenvatting of
+/// gecorrigeerd transcript). De daadwerkelijke bewerking wordt als delegate
+/// meegegeven, zodat ditzelfde venster voor beide functies dient.
+/// </summary>
 public partial class SummaryWindow : Window
 {
     private readonly Summarizer _summarizer;
-    private readonly string _transcript;
+    private readonly string _title;
+    private readonly Func<Action<string>, CancellationToken, Task> _run;
     private readonly CancellationTokenSource _cts = new();
-    private bool _hasPlaceholder;
+    private bool _started;
 
-    public SummaryWindow(Summarizer summarizer, string transcript)
+    public SummaryWindow(
+        Summarizer summarizer, string title,
+        Func<Action<string>, CancellationToken, Task> run)
     {
         InitializeComponent();
         _summarizer = summarizer;
-        _transcript = transcript;
+        _title = title;
+        _run = run;
+
+        Title = title;
+        HeaderText.Text = "📋  " + title;
 
         _summarizer.Status += OnStatus;
         _summarizer.DownloadProgress += OnProgress;
@@ -34,8 +46,7 @@ public partial class SummaryWindow : Window
     {
         try
         {
-            await Task.Run(() => _summarizer.SummarizeAsync(
-                _transcript,
+            await Task.Run(() => _run(
                 token => Dispatcher.Invoke(() => Append(token)),
                 _cts.Token));
             ProgBar.Visibility = Visibility.Collapsed;
@@ -44,7 +55,7 @@ public partial class SummaryWindow : Window
         }
         catch (OperationCanceledException)
         {
-            // Venster gesloten tijdens samenvatten.
+            // Venster gesloten tijdens de bewerking.
         }
         catch (Exception ex)
         {
@@ -54,10 +65,10 @@ public partial class SummaryWindow : Window
 
     private void Append(string token)
     {
-        if (!_hasPlaceholder)
+        if (!_started)
         {
             SummaryBox.Clear();
-            _hasPlaceholder = true;
+            _started = true;
         }
         SummaryBox.AppendText(token);
         SummaryBox.ScrollToEnd();
@@ -81,14 +92,14 @@ public partial class SummaryWindow : Window
     {
         var dlg = new SaveFileDialog
         {
-            Title = "Samenvatting opslaan",
-            FileName = $"samenvatting-{DateTime.Now:yyyyMMdd}",
+            Title = _title + " opslaan",
+            FileName = $"{_title.ToLower().Replace(' ', '-')}-{DateTime.Now:yyyyMMdd}",
             DefaultExt = ".md",
             Filter = "Markdown|*.md|Tekst|*.txt",
         };
         if (dlg.ShowDialog() != true) return;
         var header = dlg.FileName.EndsWith(".md")
-            ? $"# Samenvatting\n\nDatum: {DateTime.Now:yyyy-MM-dd HH:mm}\n\n---\n\n"
+            ? $"# {_title}\n\nDatum: {DateTime.Now:yyyy-MM-dd HH:mm}\n\n---\n\n"
             : "";
         File.WriteAllText(dlg.FileName, header + SummaryBox.Text.Trim() + "\n");
         StatusText.Text = "Opgeslagen: " + dlg.FileName;

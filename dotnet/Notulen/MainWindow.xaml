@@ -139,6 +139,9 @@
                                 <Button x:Name="RenameSpeakersBtn" Content="🧑  Sprekers hernoemen"
                                         Style="{StaticResource SecondaryButton}"
                                         Margin="0,0,8,0" IsEnabled="False" Click="RenameSpeakers_Click" />
+                                <Button x:Name="CorrectBtn" Content="🪄  Corrigeer"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Margin="0,0,8,0" IsEnabled="False" Click="Correct_Click" />
                                 <Button x:Name="SummarizeBtn" Content="✨  Vat samen"
                                         Style="{StaticResource SecondaryButton}"
                                         Margin="0,0,8,0" IsEnabled="False" Click="Summarize_Click" />

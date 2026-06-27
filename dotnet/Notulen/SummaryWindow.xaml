@@ -11,8 +11,8 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="📋  Samenvatting" Style="{StaticResource Head}"
-                   FontSize="16" Margin="0,0,0,4" />
+        <TextBlock x:Name="HeaderText" Grid.Row="0" Text="📋  Samenvatting"
+                   Style="{StaticResource Head}" FontSize="16" Margin="0,0,0,4" />
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
             <ProgressBar x:Name="ProgBar" Width="160" Height="12" Minimum="0" Maximum="100"
