@@ -65,7 +65,7 @@ public class Transcriber
         // wat afdwalen/herhalen (hallucinaties) flink vermindert.
         var builder = _factory!.CreateBuilder()
             .WithLanguage(string.IsNullOrEmpty(language) ? "auto" : language)
-            .WithNoContext(true);
+            .WithNoContext();
 
         // Prompt = woordenlijst + (bij live) de voorgaande tekst als context.
         var promptParts = new List<string>();
