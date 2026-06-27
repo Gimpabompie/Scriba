@@ -18,13 +18,24 @@
 
         <FontFamily x:Key="UiFont">Segoe UI</FontFamily>
 
+        <!-- Accent-verloop voor de koptekst -->
+        <LinearGradientBrush x:Key="HeaderBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#FF4F46E5" Offset="0" />
+            <GradientStop Color="#FF6366F1" Offset="1" />
+        </LinearGradientBrush>
+
+        <!-- Subtiele schaduw onder kaarten -->
+        <DropShadowEffect x:Key="CardShadow" Color="#FF1E1B4B" BlurRadius="20"
+                          ShadowDepth="2" Direction="270" Opacity="0.10" />
+
         <!-- Kaart -->
         <Style x:Key="CardStyle" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource Card}" />
             <Setter Property="BorderBrush" Value="{StaticResource Border}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="Padding" Value="14" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="Effect" Value="{StaticResource CardShadow}" />
         </Style>
 
         <Style x:Key="Head" TargetType="TextBlock">

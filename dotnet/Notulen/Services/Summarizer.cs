@@ -77,14 +77,18 @@ public class Summarizer
 
     private async Task<string> EnsureModelAsync(CancellationToken ct)
     {
+        // Eerst zoeken naar een vooraf geplaatst model (bv. netwerkshare).
+        var existing = AppSettings.FindExistingModel(ModelFile);
+        if (existing != null) return existing;
+
         Directory.CreateDirectory(AppSettings.ModelsDir);
         var path = Path.Combine(AppSettings.ModelsDir, ModelFile);
-        if (File.Exists(path) && new FileInfo(path).Length > 0)
-            return path;
 
         Status?.Invoke("Samenvattingsmodel wordt eenmalig gedownload…");
+        // Interne spiegel/eigen URL mogelijk via NOTULEN_LLM_URL.
+        var url = Environment.GetEnvironmentVariable("NOTULEN_LLM_URL") ?? ModelUrl;
         using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-        using var resp = await http.GetAsync(ModelUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
         resp.EnsureSuccessStatusCode();
 
         long total = resp.Content.Headers.ContentLength ?? -1L;

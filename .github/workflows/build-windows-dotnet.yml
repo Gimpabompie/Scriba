@@ -33,9 +33,22 @@ jobs:
           dotnet publish -c Release -r win-x64 --self-contained true
           -o publish
 
-      - name: App uploaden als artefact
+      - name: App uploaden als artefact (ZIP-map)
         uses: actions/upload-artifact@v4
         with:
           name: notulen-dotnet-app
           path: dotnet/Notulen/publish/**
+          if-no-files-found: error
+
+      - name: Inno Setup installeren
+        run: choco install innosetup -y --no-progress
+
+      - name: Installer bouwen
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" dotnet\installer\notulen.iss'
+
+      - name: Installer uploaden als artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notulen-installer
+          path: dotnet/installer/Output/Notulen-Setup.exe
           if-no-files-found: error

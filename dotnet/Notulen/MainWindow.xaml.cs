@@ -94,6 +94,23 @@ public partial class MainWindow : Window
 
     private AudioDevice? SelectedDevice() => DeviceBox.SelectedItem as AudioDevice;
 
+    private void OpenRecordings_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(AppSettings.RecordingsDir);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = AppSettings.RecordingsDir,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "Opnamemap", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     // ---------- Opname ----------
     private async void Record_Click(object sender, RoutedEventArgs e)
     {

@@ -14,13 +14,12 @@
         </Grid.RowDefinitions>
 
         <!-- Koptekst -->
-        <Border Grid.Row="0" Background="{StaticResource Card}"
-                BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1">
-            <StackPanel Margin="18,12">
-                <TextBlock Text="📝  Notulen" Foreground="{StaticResource Ink}"
-                           FontSize="20" FontWeight="Bold" />
+        <Border Grid.Row="0" Background="{StaticResource HeaderBrush}">
+            <StackPanel Margin="20,16">
+                <TextBlock Text="📝  Notulen" Foreground="White"
+                           FontSize="22" FontWeight="Bold" />
                 <TextBlock Text="Offline spraak naar tekst · Nederlands &amp; Engels"
-                           Style="{StaticResource MutedText}" />
+                           Foreground="#FFE0E7FF" FontSize="12" Margin="0,2,0,0" />
             </StackPanel>
         </Border>
 
@@ -74,8 +73,14 @@
                                     Style="{StaticResource SecondaryButton}"
                                     Margin="8,0,0,0" Click="Refresh_Click" />
                         </Grid>
-                        <CheckBox x:Name="SaveAudioBox" Grid.Row="5" Grid.ColumnSpan="3"
-                                  Content="Opname bewaren als .wav" Margin="0,8,0,0" />
+                        <DockPanel Grid.Row="5" Grid.ColumnSpan="3" Margin="0,8,0,0">
+                            <Button x:Name="OpenRecordingsBtn" DockPanel.Dock="Right"
+                                    Content="📂  Opnamemap openen" Padding="10,6"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Click="OpenRecordings_Click" />
+                            <CheckBox x:Name="SaveAudioBox" VerticalAlignment="Center"
+                                      Content="Opname bewaren als .wav" />
+                        </DockPanel>
                     </Grid>
                 </Border>
 

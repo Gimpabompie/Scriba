@@ -91,13 +91,21 @@ public class Transcriber
     private async Task<string> EnsureModelAsync(string size, CancellationToken ct)
     {
         var file = ModelFiles.GetValueOrDefault(size, "ggml-small.bin");
+
+        // Eerst zoeken naar een vooraf geplaatst model (bv. op een netwerkshare
+        // via NOTULEN_MODELS_DIR). Op afgeschermde netwerken wordt zo niets
+        // gedownload.
+        var existing = AppSettings.FindExistingModel(file);
+        if (existing != null) return existing;
+
         Directory.CreateDirectory(AppSettings.ModelsDir);
         var path = Path.Combine(AppSettings.ModelsDir, file);
-        if (File.Exists(path) && new FileInfo(path).Length > 0)
-            return path;
 
         Status?.Invoke($"Model '{size}' wordt eenmalig gedownload…");
-        var url = $"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{file}";
+        // Interne spiegel mogelijk via NOTULEN_MODEL_BASEURL.
+        var baseUrl = Environment.GetEnvironmentVariable("NOTULEN_MODEL_BASEURL")?.TrimEnd('/')
+                      ?? "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
+        var url = $"{baseUrl}/{file}";
 
         // Geen totale timeout: grote modellen (medium ~1,5 GB) mogen lang duren;
         // we leunen op de CancellationToken om te kunnen afbreken.
