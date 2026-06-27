@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Scriba</AssemblyName>
+    <RootNamespace>Notulen</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.0</Version>
+    <!-- LLamaSharp.Backend.Cpu levert meerdere CPU-varianten (avx/avx2/…) van
+         dezelfde native DLL's; sta dat toe bij publiceren (NETSDK1152). -->
+    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Audio-opname (microfoon + WASAPI-loopback voor systeemaudio) -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- Offline transcriptie via whisper.cpp -->
+    <PackageReference Include="Whisper.net" Version="1.7.4" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.7.4" />
+    <!-- Offline samenvatting via een lokaal taalmodel (llama.cpp) -->
+    <PackageReference Include="LLamaSharp" Version="0.24.0" />
+    <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.24.0" />
+  </ItemGroup>
+
+</Project>

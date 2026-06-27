@@ -1,0 +1,14 @@
+# Offline spraak-naar-tekst notulen-app
+# Alles draait lokaal; alleen het taalmodel wordt bij de eerste keer
+# eenmalig gedownload, daarna werkt de app volledig offline.
+
+faster-whisper>=1.0.0   # offline Whisper-transcriptie (CPU/GPU), NL + EN
+sounddevice>=0.4.6      # opnemen via microfoon / systeemaudio
+numpy>=1.24             # audiobuffers
+
+# --- Optioneel: sprekerherkenning ("wie zei wat") ---
+# Vereist eenmalig een (gratis) HuggingFace-token om het model te downloaden;
+# daarna draait het lokaal. Installeer alleen als je dit gebruikt:
+#   pip install pyannote.audio torch
+# pyannote.audio>=3.1
+# torch>=2.0

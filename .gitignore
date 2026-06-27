@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.wav
+*.mp3
+*.m4a
+notulen_output/

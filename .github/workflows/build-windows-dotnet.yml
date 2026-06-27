@@ -1,0 +1,67 @@
+name: Build Windows EXE (.NET)
+
+# Bouwt de C#/.NET (WPF) versie als self-contained map (geen Python/.NET nodig).
+# We publiceren NIET als single-file: Whisper.net laadt zijn native whisper.dll
+# uit de runtimes-map, en die wordt bij single-file-uitpakken niet gevonden.
+# Handmatig starten kan via tabblad "Actions" -> "Run workflow".
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/offline-tts-note-recorder-lhdro5
+    paths:
+      - "dotnet/**"
+      - ".github/workflows/build-windows-dotnet.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    # Code-signing is optioneel: zonder deze secrets slaat het ondertekenen
+    # zichzelf over en blijft de build gewoon werken.
+    env:
+      PFX_B64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+      PFX_PASSWORD: ${{ secrets.CODE_SIGN_PASSWORD }}
+      TIMESTAMP_URL: ${{ vars.CODE_SIGN_TIMESTAMP_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: .NET 8 installeren
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Herstellen & publiceren
+        working-directory: dotnet/Notulen
+        run: >
+          dotnet publish -c Release -r win-x64 --self-contained true
+          -o publish
+
+      - name: Scriba.exe ondertekenen (optioneel)
+        run: pwsh dotnet/installer/sign.ps1 -Path dotnet/Notulen/publish/Scriba.exe
+
+      - name: App uploaden als artefact (ZIP-map)
+        uses: actions/upload-artifact@v4
+        with:
+          name: scriba-app
+          path: dotnet/Notulen/publish/**
+          if-no-files-found: error
+
+      - name: Inno Setup installeren
+        run: choco install innosetup -y --no-progress
+
+      - name: Installer bouwen
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" dotnet\installer\notulen.iss'
+
+      - name: Installer ondertekenen (optioneel)
+        run: pwsh dotnet/installer/sign.ps1 -Path dotnet/installer/Output/Scriba-Setup.exe
+
+      - name: Installer uploaden als artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scriba-installer
+          path: dotnet/installer/Output/Scriba-Setup.exe
+          if-no-files-found: error
