@@ -78,13 +78,32 @@ Bij `NOTULEN_MODEL_BASEURL` haalt de app `<baseurl>/ggml-<model>.bin` op.
 
 ## 4. SmartScreen / Defender (niet-ondertekend)
 
-De `.exe`/installer is (nog) niet ondertekend. Bij de eerste start kan Windows
-SmartScreen waarschuwen → **Meer info → Toch uitvoeren**. Voor een vlotte uitrol:
+De `.exe`/installer is niet ondertekend zolang er geen certificaat is ingesteld.
+Bij de eerste start kan Windows SmartScreen waarschuwen → **Meer info → Toch
+uitvoeren**, of voeg de uitgever/het bestand toe aan de SmartScreen/Defender-
+uitzonderingen via je beheertools.
 
-- Onderteken met een intern code-signing certificaat (kan later toegevoegd
-  worden aan de build), of
-- Voeg de uitgever/het bestand toe aan de SmartScreen/Defender-uitzonderingen
-  via je beheertools.
+### Ondertekenen activeren (aanbevolen)
+
+De build ondertekent **automatisch** zodra je een certificaat als GitHub-secret
+toevoegt. Doe dit eenmalig in de repo (Settings → Secrets and variables →
+Actions):
+
+| Naam | Type | Waarde |
+|---|---|---|
+| `CODE_SIGN_PFX_BASE64` | Secret | je `.pfx`-certificaat, base64-gecodeerd |
+| `CODE_SIGN_PASSWORD` | Secret | wachtwoord van het `.pfx` |
+| `CODE_SIGN_TIMESTAMP_URL` | Variable (optioneel) | eigen RFC3161 timestamp-server |
+
+Het `.pfx` base64-coderen kan zo:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("certificaat.pfx")) | Set-Clipboard
+```
+
+Daarna ondertekent elke build automatisch `Notulen.exe` én `Notulen-Setup.exe`.
+Zonder deze secrets wordt het ondertekenen overgeslagen en blijft de build
+gewoon werken.
 
 ## 5. Opslag van gebruikersdata
 

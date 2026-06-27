@@ -18,6 +18,13 @@ jobs:
   build:
     runs-on: windows-latest
 
+    # Code-signing is optioneel: zonder deze secrets slaat het ondertekenen
+    # zichzelf over en blijft de build gewoon werken.
+    env:
+      PFX_B64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+      PFX_PASSWORD: ${{ secrets.CODE_SIGN_PASSWORD }}
+      TIMESTAMP_URL: ${{ vars.CODE_SIGN_TIMESTAMP_URL }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,6 +40,9 @@ jobs:
           dotnet publish -c Release -r win-x64 --self-contained true
           -o publish
 
+      - name: Notulen.exe ondertekenen (optioneel)
+        run: pwsh dotnet/installer/sign.ps1 -Path dotnet/Notulen/publish/Notulen.exe
+
       - name: App uploaden als artefact (ZIP-map)
         uses: actions/upload-artifact@v4
         with:
@@ -45,6 +55,9 @@ jobs:
 
       - name: Installer bouwen
         run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" dotnet\installer\notulen.iss'
+
+      - name: Installer ondertekenen (optioneel)
+        run: pwsh dotnet/installer/sign.ps1 -Path dotnet/installer/Output/Notulen-Setup.exe
 
       - name: Installer uploaden als artefact
         uses: actions/upload-artifact@v4
