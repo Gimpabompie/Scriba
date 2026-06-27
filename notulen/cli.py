@@ -1,7 +1,8 @@
 """Command-line variant: transcribeer een audiobestand naar notulen.
 
 Voorbeeld:
-    python -m notulen.cli vergadering.mp3 --taal nl --model small -o notulen.md
+    python -m notulen.cli vergadering.mp3 --taal nl --model small \\
+        --woordenlijst "Jan Jansen, Acme BV, sprint" --sprekers -o notulen.md
 
 Werkt zonder GUI/tkinter, handig voor losse bestanden of scripts.
 """
@@ -12,7 +13,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .transcriber import LANGUAGES, MODEL_SIZES, DEFAULT_MODEL, Transcriber
+from .transcriber import DEFAULT_MODEL, MODEL_SIZES, Transcriber
 
 # Kortere taalcodes voor op de command line.
 _LANG_CODES = {"auto": None, "nl": "nl", "en": "en"}
@@ -24,25 +25,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("audio", help="Pad naar het audiobestand.")
     parser.add_argument(
-        "--taal",
-        choices=_LANG_CODES.keys(),
-        default="auto",
+        "--taal", choices=_LANG_CODES.keys(), default="auto",
         help="Taal van de opname (default: auto detecteren).",
     )
     parser.add_argument(
-        "--model",
-        choices=MODEL_SIZES,
-        default=DEFAULT_MODEL,
+        "--model", choices=MODEL_SIZES, default=DEFAULT_MODEL,
         help=f"Whisper-modelgrootte (default: {DEFAULT_MODEL}).",
     )
     parser.add_argument(
-        "-o",
-        "--output",
+        "--woordenlijst", default="",
+        help="Namen/vaktermen (komma-gescheiden) voor betere spelling.",
+    )
+    parser.add_argument(
+        "--sprekers", action="store_true",
+        help="Sprekerherkenning toevoegen (vereist pyannote.audio).",
+    )
+    parser.add_argument(
+        "-o", "--output",
         help="Schrijf de notulen naar dit bestand i.p.v. naar het scherm.",
     )
     parser.add_argument(
-        "--geen-tijdstempels",
-        action="store_true",
+        "--geen-tijdstempels", action="store_true",
         help="Laat de tijdstempels weg.",
     )
     args = parser.parse_args(argv)
@@ -55,6 +58,8 @@ def main(argv: list[str] | None = None) -> int:
     result = transcriber.transcribe(
         args.audio,
         language=_LANG_CODES[args.taal],
+        vocabulary=args.woordenlijst,
+        diarize=args.sprekers,
         on_status=lambda m: print(f"[…] {m}", file=sys.stderr),
     )
 

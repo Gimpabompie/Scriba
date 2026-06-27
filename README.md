@@ -11,13 +11,18 @@ automatische taaldetectie).
 
 ## Functies
 
-- 🎙️ Opnemen via de microfoon (start/stop) — live transcript in beeld.
+- 🎙️ Opnemen via **microfoon óf systeem-/vergaderaudio** (Teams/Zoom/Meet) — zo
+  worden ook de andere deelnemers vastgelegd, niet alleen jijzelf.
+- 📊 **Live niveaumeter** met waarschuwing bij te zacht of oversturing.
+- 💽 **Opname automatisch bewaren** als `.wav`, zodat je nooit een vergadering
+  kwijtraakt als de transcriptie faalt.
 - 📁 Bestaand audiobestand laden (`.wav`, `.mp3`, `.m4a`, `.flac`, …).
 - 🇳🇱🇬🇧 Nederlands, Engels of automatische detectie.
+- 📒 **Woordenlijst** (namen & vaktermen) voor correcte spelling — wordt onthouden.
+- 🗣️ Optionele **sprekerherkenning**: "wie zei wat".
 - ⏱️ Notulen met of zonder tijdstempels.
 - 💾 Opslaan als `.txt` of `.md`.
-- 🧠 Keuze uit modelgroottes (`tiny` … `large-v3`): groter = nauwkeuriger maar
-  trager.
+- 🧠 Keuze uit modelgroottes (`tiny` … `large-v3`).
 
 ## Installatie
 
@@ -35,6 +40,33 @@ sudo apt install python3-tk
 
 Op **Windows** en **macOS** zit tkinter standaard bij Python.
 
+### Sprekerherkenning (optioneel)
+
+```bash
+pip install pyannote.audio torch
+```
+
+Het diarization-model is 'gated' op HuggingFace: accepteer eenmalig de
+voorwaarden en zet een token, daarna draait het lokaal.
+
+```bash
+export HUGGINGFACE_TOKEN=hf_xxx   # Windows: set HUGGINGFACE_TOKEN=hf_xxx
+```
+
+## Systeem-/vergaderaudio opnemen
+
+Om de **andere deelnemers** van een online vergadering vast te leggen, kies je
+in het menu **Audiobron** een systeemaudio-bron i.p.v. de microfoon:
+
+- **Windows:** verschijnt automatisch als loopback van je uitvoerapparaat
+  (WASAPI).
+- **Linux (PulseAudio/PipeWire):** kies de bron met *"Monitor"* in de naam.
+- **macOS:** installeer een virtueel apparaat zoals
+  [BlackHole](https://github.com/ExistentialAudio/BlackHole) en kies dat.
+
+Tip: wil je tegelijk jezelf én de vergadering opnemen, maak dan op je systeem
+een gecombineerd apparaat (mix van mic + monitor) en kies die als bron.
+
 ## Gebruik
 
 ### Desktop-app (met venster)
@@ -43,27 +75,29 @@ Op **Windows** en **macOS** zit tkinter standaard bij Python.
 python -m notulen
 ```
 
-1. Kies de **taal** en eventueel een **model** (begin met `small`).
-2. Klik **Opname starten** en spreek, of **Audiobestand laden…**.
-3. Klik **Opname stoppen** — de tekst verschijnt.
-4. Klik **Notulen opslaan…**.
+1. Kies **taal**, **model** (begin met `small`) en de **audiobron**.
+2. Vul eventueel de **woordenlijst** met namen/termen.
+3. Klik **Opname starten** en spreek, of **Audiobestand laden…**.
+4. Klik **Opname stoppen** — de tekst verschijnt.
+5. Klik **Notulen opslaan…**.
 
 ### Command line (zonder venster)
 
-Handig voor losse bestanden of scripts:
-
 ```bash
-python -m notulen.cli vergadering.mp3 --taal nl --model small -o notulen.md
+python -m notulen.cli vergadering.mp3 --taal nl --model small \
+    --woordenlijst "Jan Jansen, Acme BV, sprint" --sprekers -o notulen.md
 ```
 
 Opties: `--taal {auto,nl,en}`, `--model {tiny,base,small,medium,large-v3}`,
-`-o/--output BESTAND`, `--geen-tijdstempels`.
+`--woordenlijst "…"`, `--sprekers`, `-o/--output BESTAND`,
+`--geen-tijdstempels`.
 
 ## Tips voor nauwkeurigheid
 
-- Een goede microfoon en weinig achtergrondgeluid helpen het meest.
-- `small` is een prima balans; `medium` of `large-v3` is nauwkeuriger maar
-  vraagt meer geheugen en tijd.
+- Een goede microfoon en weinig achtergrondgeluid helpen het meest; let op de
+  niveaumeter (niet in het rood, niet bijna stil).
+- Vul de woordenlijst met deelnemersnamen en jargon.
+- `small` is een prima balans; `medium`/`large-v3` is nauwkeuriger maar trager.
 - Heb je een NVIDIA-GPU? In `transcriber.py` kun je `device="cuda"` en
   `compute_type="float16"` zetten voor flink snellere transcriptie.
 
@@ -72,8 +106,20 @@ Opties: `--taal {auto,nl,en}`, `--model {tiny,base,small,medium,large-v3}`,
 ```
 notulen/
   app.py          # Tkinter-GUI
-  recorder.py     # microfoon-opname -> numpy-buffer
-  transcriber.py  # offline Whisper-transcriptie
+  recorder.py     # opname (mic/systeem) -> numpy, met niveaumeting + WAV-backup
+  audio_io.py     # apparaatlijst, niveau-berekening, WAV-schrijver
+  transcriber.py  # offline Whisper-transcriptie + woordenlijst
+  diarization.py  # optionele sprekerherkenning
+  config.py       # onthoudt instellingen (~/.notulen/config.json)
   cli.py          # command-line variant
   __main__.py     # 'python -m notulen' start de GUI
+```
+
+## Tests
+
+De pure logica (niveau-berekening, woordenlijst, sprekerkoppeling, opmaak)
+heeft tests die zonder audio/modellen draaien:
+
+```bash
+python -m pytest        # of: python tests/test_logic.py
 ```

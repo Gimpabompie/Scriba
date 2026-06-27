@@ -31,6 +31,7 @@ class Segment:
     start: float
     end: float
     text: str
+    speaker: Optional[str] = None  # ingevuld bij sprekerherkenning
 
 
 @dataclass
@@ -44,12 +45,33 @@ class TranscriptionResult:
 
     def as_minutes(self, with_timestamps: bool = True) -> str:
         """Formatteer het transcript als leesbare notulen."""
-        if not with_timestamps:
-            return self.text
         lines = []
         for s in self.segments:
-            lines.append(f"[{_fmt_ts(s.start)} - {_fmt_ts(s.end)}] {s.text.strip()}")
-        return "\n".join(lines)
+            prefix = ""
+            if with_timestamps:
+                prefix += f"[{_fmt_ts(s.start)} - {_fmt_ts(s.end)}] "
+            if s.speaker:
+                prefix += f"{s.speaker}: "
+            lines.append(f"{prefix}{s.text.strip()}".strip())
+        if with_timestamps or any(s.speaker for s in self.segments):
+            return "\n".join(lines)
+        # Geen tijdstempels en geen sprekers: één doorlopende tekst.
+        return self.text
+
+
+def build_initial_prompt(vocabulary: str) -> Optional[str]:
+    """Maak van een vrije woordenlijst (namen/termen) een Whisper initial_prompt.
+
+    Whisper gebruikt deze context om eigennamen en jargon correct te spellen.
+    """
+    if not vocabulary or not vocabulary.strip():
+        return None
+    # Sta zowel komma's, puntkomma's als nieuwe regels toe als scheidingsteken.
+    raw = vocabulary.replace(";", ",").replace("\n", ",")
+    terms = [t.strip() for t in raw.split(",") if t.strip()]
+    if not terms:
+        return None
+    return "Namen en termen: " + ", ".join(terms) + "."
 
 
 def _fmt_ts(seconds: float) -> str:
@@ -96,11 +118,16 @@ class Transcriber:
         self,
         audio: Union[str, "np.ndarray", Any],
         language: Optional[str] = None,
+        vocabulary: str = "",
+        diarize: bool = False,
+        sample_rate: int = 16_000,
         on_status: Optional[Callable[[str], None]] = None,
         on_segment: Optional[Callable[[Segment], None]] = None,
     ) -> TranscriptionResult:
         """Transcribeer een audiobestand (pad) of een numpy-buffer (16 kHz mono).
 
+        `vocabulary` geeft namen/jargon mee voor betere spelling.
+        `diarize` voegt sprekerlabels toe (vereist pyannote.audio).
         `on_segment` wordt aangeroepen zodra een segment klaar is, zodat de GUI
         het transcript live kan opbouwen.
         """
@@ -110,9 +137,14 @@ class Transcriber:
         if on_status:
             on_status("Bezig met transcriberen…")
 
+        # Bij sprekerherkenning bouwen we het transcript eerst volledig op en
+        # voegen we daarna de labels toe; live segmenten zijn dan minder zinvol.
+        emit_live = on_segment is not None and not diarize
+
         segments_iter, info = self._model.transcribe(
             audio,
             language=language,
+            initial_prompt=build_initial_prompt(vocabulary),
             vad_filter=True,  # negeer stiltes -> betere notulen
             beam_size=5,
         )
@@ -121,8 +153,21 @@ class Transcriber:
         for seg in segments_iter:
             s = Segment(start=seg.start, end=seg.end, text=seg.text)
             result.segments.append(s)
-            if on_segment:
+            if emit_live:
                 on_segment(s)
+
+        if diarize:
+            try:
+                from .diarization import assign_speakers, diarize as run_diarize
+
+                turns = run_diarize(audio, sample_rate=sample_rate, on_status=on_status)
+                assign_speakers(result.segments, turns)
+            except Exception as exc:  # noqa: BLE001
+                if on_status:
+                    on_status(f"Sprekerherkenning overgeslagen: {exc}")
+            if on_segment:
+                for s in result.segments:
+                    on_segment(s)
 
         if on_status:
             on_status(f"Klaar. Taal: {result.language}")
