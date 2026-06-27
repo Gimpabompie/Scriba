@@ -28,21 +28,39 @@ public class Transcriber
         ["large-v3"] = "ggml-large-v3.bin",
     };
 
+    // Het geladen model wordt hergebruikt (belangrijk voor live: niet per
+    // stukje het hele model opnieuw inladen).
+    private WhisperFactory? _factory;
+    private string? _loadedModel;
+
+    /// <summary>Is het gevraagde model al geladen en klaar voor gebruik?</summary>
+    public bool IsReady(string modelSize) => _factory != null && _loadedModel == modelSize;
+
+    /// <summary>Zorg dat het model gedownload én geladen is.</summary>
+    public async Task EnsureReadyAsync(string modelSize, CancellationToken ct = default)
+    {
+        if (IsReady(modelSize)) return;
+        var modelPath = await EnsureModelAsync(modelSize, ct);
+        Status?.Invoke("Model laden…");
+        _factory?.Dispose();
+        _factory = WhisperFactory.FromPath(modelPath);
+        _loadedModel = modelSize;
+    }
+
     public async Task<List<TranscriptSegment>> TranscribeAsync(
         float[] samples,
         string modelSize,
         string? language,
         string vocabulary,
         Action<TranscriptSegment>? onSegment,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        double timeOffsetSeconds = 0,
+        bool announce = true)
     {
-        var modelPath = await EnsureModelAsync(modelSize, ct);
-
-        Status?.Invoke("Model laden…");
-        using var factory = WhisperFactory.FromPath(modelPath);
+        await EnsureReadyAsync(modelSize, ct);
 
         // "auto" laat whisper de taal zelf detecteren (NL/EN/…).
-        var builder = factory.CreateBuilder()
+        var builder = _factory!.CreateBuilder()
             .WithLanguage(string.IsNullOrEmpty(language) ? "auto" : language);
 
         if (!string.IsNullOrWhiteSpace(vocabulary))
@@ -50,16 +68,17 @@ public class Transcriber
 
         using var processor = builder.Build();
 
-        Status?.Invoke("Bezig met transcriberen…");
+        if (announce) Status?.Invoke("Bezig met transcriberen…");
+        var offset = TimeSpan.FromSeconds(timeOffsetSeconds);
         var segments = new List<TranscriptSegment>();
         await foreach (var seg in processor.ProcessAsync(samples, ct))
         {
-            var s = new TranscriptSegment(seg.Start, seg.End, seg.Text.Trim());
+            var s = new TranscriptSegment(seg.Start + offset, seg.End + offset, seg.Text.Trim());
             segments.Add(s);
             onSegment?.Invoke(s);
         }
 
-        Status?.Invoke("Klaar.");
+        if (announce) Status?.Invoke("Klaar.");
         return segments;
     }
 

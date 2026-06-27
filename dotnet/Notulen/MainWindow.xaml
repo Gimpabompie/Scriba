@@ -55,7 +55,8 @@
                         <ComboBox x:Name="ModelBox" Grid.Row="1" Grid.Column="1"
                                   Width="120" Margin="0,0,16,0" />
                         <StackPanel Grid.Row="1" Grid.Column="2" VerticalAlignment="Center">
-                            <CheckBox x:Name="TimestampsBox" Content="Tijdstempels" />
+                            <CheckBox x:Name="LiveBox" Content="Live transcriberen (tijdens spreken)" />
+                            <CheckBox x:Name="TimestampsBox" Content="Tijdstempels" Margin="0,4,0,0" />
                         </StackPanel>
 
                         <Separator Grid.Row="2" Grid.ColumnSpan="3" Margin="0,12"

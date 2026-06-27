@@ -14,6 +14,7 @@ public class AppSettings
     public string Vocabulary { get; set; } = "";
     public bool Timestamps { get; set; } = true;
     public bool SaveAudio { get; set; } = true;
+    public bool Live { get; set; } = true;
     public string? Device { get; set; }
 
     private static string Dir =>

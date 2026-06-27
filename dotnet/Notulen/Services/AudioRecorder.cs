@@ -14,22 +14,46 @@ public record AudioDevice(string Id, string Name, bool IsLoopback)
 }
 
 /// <summary>
-/// Neemt op via WASAPI (microfoon of systeem-/vergaderaudio-loopback), meet het
-/// niveau live, en levert 16 kHz mono samples + een WAV-bestand. WASAPI bepaalt
-/// zelf de native samplerate; we resamplen achteraf netjes naar 16 kHz.
+/// Neemt op via WASAPI (microfoon of systeem-/vergaderaudio-loopback) en zet de
+/// audio meteen om naar 16 kHz mono, zodat de samples live beschikbaar zijn voor
+/// transcriptie tijdens het opnemen. Schrijft ook incrementeel een WAV-backup.
 /// </summary>
 public class AudioRecorder
 {
+    private const float SilenceThreshold = 0.02f; // ~ -34 dBFS
+
+    private readonly object _lock = new();
     private IWaveIn? _capture;
-    private MemoryStream? _buffer;
-    private WaveFormat? _format;
+    private BufferedWaveProvider? _buffered;
+    private ISampleProvider? _resampler;
+    private WaveFileWriter? _wav;
+    private float[] _readBuf = new float[16_000];
+    private readonly List<float> _samples = new();
+    private double _silenceSeconds;
 
     public bool IsRecording => _capture != null;
     public bool Clipped { get; private set; }
     public string? Path { get; private set; }
 
+    /// <summary>Aantal stilte-seconden direct vóór 'nu' (voor live-knippunten).</summary>
+    public double TrailingSilenceSeconds { get { lock (_lock) return _silenceSeconds; } }
+
+    /// <summary>Aantal beschikbare 16 kHz mono samples tot nu toe.</summary>
+    public int SampleCount { get { lock (_lock) return _samples.Count; } }
+
     /// <summary>(dbfs, fractie 0..1, clipping)</summary>
     public event Action<double, double, bool>? LevelChanged;
+
+    /// <summary>Kopieer een bereik van de tot nu toe opgenomen 16 kHz samples.</summary>
+    public float[] Snapshot(int start, int count)
+    {
+        lock (_lock)
+        {
+            if (start < 0 || count <= 0 || start >= _samples.Count) return Array.Empty<float>();
+            count = Math.Min(count, _samples.Count - start);
+            return _samples.GetRange(start, count).ToArray();
+        }
+    }
 
     public static List<AudioDevice> ListDevices()
     {
@@ -44,7 +68,7 @@ public class AudioRecorder
         }
         catch
         {
-            // Geen apparaten beschikbaar -> lege lijst, standaard microfoon blijft mogelijk.
+            // Geen apparaten -> lege lijst; standaard microfoon blijft mogelijk.
         }
         return list;
     }
@@ -77,11 +101,27 @@ public class AudioRecorder
                 "apparaat gekozen is en niet door een andere app wordt geblokkeerd.", ex);
         }
 
-        _format = _capture.WaveFormat;
-        _buffer = new MemoryStream();
-        Clipped = false;
-        Path = path;
+        var format = _capture.WaveFormat;
+
+        // Pijplijn: ruwe audio -> mono -> 16 kHz, live uitleesbaar.
+        _buffered = new BufferedWaveProvider(format)
+        {
+            BufferDuration = TimeSpan.FromSeconds(30),
+            DiscardOnBufferOverflow = true,
+            ReadFully = false,
+        };
+        ISampleProvider sp = _buffered.ToSampleProvider();
+        if (sp.WaveFormat.Channels > 1) sp = new MonoSampleProvider(sp);
+        _resampler = sp.WaveFormat.SampleRate != SampleHelpers.TargetRate
+            ? new WdlResamplingSampleProvider(sp, SampleHelpers.TargetRate)
+            : sp;
+
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+        _wav = new WaveFileWriter(path, new WaveFormat(SampleHelpers.TargetRate, 16, 1));
+        Path = path;
+        Clipped = false;
+        _silenceSeconds = 0;
+        _samples.Clear();
 
         _capture.DataAvailable += OnData;
         _capture.StartRecording();
@@ -89,44 +129,43 @@ public class AudioRecorder
 
     private void OnData(object? sender, WaveInEventArgs e)
     {
-        _buffer?.Write(e.Buffer, 0, e.BytesRecorded);
+        if (_buffered == null || _resampler == null) return;
+        _buffered.AddSamples(e.Buffer, 0, e.BytesRecorded);
 
-        // Niveaumeting (afhankelijk van het opnameformaat).
-        if (LevelChanged == null || _format == null || e.BytesRecorded == 0) return;
-
-        double sumSq = 0;
-        double peak = 0;
-        int count = 0;
-        if (_format.Encoding == WaveFormatEncoding.IeeeFloat && _format.BitsPerSample == 32)
+        int read;
+        while ((read = _resampler.Read(_readBuf, 0, _readBuf.Length)) > 0)
         {
-            for (int i = 0; i + 4 <= e.BytesRecorded; i += 4)
+            double sumSq = 0, peak = 0;
+            for (int i = 0; i < read; i++)
             {
-                float s = BitConverter.ToSingle(e.Buffer, i);
-                sumSq += s * s; peak = Math.Max(peak, Math.Abs(s)); count++;
+                float s = _readBuf[i];
+                sumSq += s * s;
+                if (Math.Abs(s) > peak) peak = Math.Abs(s);
             }
-        }
-        else if (_format.BitsPerSample == 16)
-        {
-            for (int i = 0; i + 2 <= e.BytesRecorded; i += 2)
-            {
-                float s = BitConverter.ToInt16(e.Buffer, i) / 32768f;
-                sumSq += s * s; peak = Math.Max(peak, Math.Abs(s)); count++;
-            }
-        }
-        if (count == 0) return;
 
-        double rms = Math.Sqrt(sumSq / count);
-        bool clipping = peak >= 0.99;
-        if (clipping) Clipped = true;
-        double dbfs = rms <= 1e-9 ? -120.0 : 20.0 * Math.Log10(Math.Min(rms, 1.0));
-        double frac = dbfs <= -60 ? 0 : (dbfs >= 0 ? 1 : (dbfs + 60) / 60.0);
-        LevelChanged?.Invoke(dbfs, frac, clipping);
+            lock (_lock)
+            {
+                for (int i = 0; i < read; i++) _samples.Add(_readBuf[i]);
+                try { _wav?.WriteSamples(_readBuf, 0, read); } catch { }
+
+                double secs = read / (double)SampleHelpers.TargetRate;
+                if (peak < SilenceThreshold) _silenceSeconds += secs;
+                else _silenceSeconds = 0;
+            }
+
+            bool clipping = peak >= 0.99;
+            if (clipping) Clipped = true;
+            double rms = Math.Sqrt(sumSq / Math.Max(1, read));
+            double dbfs = rms <= 1e-9 ? -120.0 : 20.0 * Math.Log10(Math.Min(rms, 1.0));
+            double frac = dbfs <= -60 ? 0 : (dbfs >= 0 ? 1 : (dbfs + 60) / 60.0);
+            LevelChanged?.Invoke(dbfs, frac, clipping);
+        }
     }
 
-    /// <summary>Stop en geef 16 kHz mono samples terug; schrijft ook het WAV-bestand.</summary>
+    /// <summary>Stop en geef alle 16 kHz mono samples terug; sluit de WAV-backup.</summary>
     public float[] Stop()
     {
-        if (_capture == null || _buffer == null || _format == null)
+        if (_capture == null)
             throw new InvalidOperationException("Er is geen opname bezig.");
 
         _capture.DataAvailable -= OnData;
@@ -134,13 +173,13 @@ public class AudioRecorder
         _capture.Dispose();
         _capture = null;
 
-        var samples = SampleHelpers.To16kMono(_buffer.ToArray(), _format);
-        _buffer.Dispose();
-        _buffer = null;
-
-        if (samples.Length > 0 && Path != null)
-            SampleHelpers.WriteWav16kMono(Path, samples);
-
-        return samples;
+        lock (_lock)
+        {
+            _wav?.Dispose();
+            _wav = null;
+            _buffered = null;
+            _resampler = null;
+            return _samples.ToArray();
+        }
     }
 }

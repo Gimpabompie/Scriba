@@ -32,6 +32,16 @@ public partial class MainWindow : Window
     private bool _keepAudio = true;
     private string? _tempAudio;
 
+    // Live-transcriptie tijdens het opnemen.
+    private CancellationTokenSource? _liveCts;
+    private Task? _liveTask;
+    private int _liveCutSamples;
+    private List<TranscriptSegment> _liveSegments = new();
+    private string _liveModel = "small";
+    private string _liveLang = "";
+    private string _liveVocab = "";
+    private bool _liveTimestamps = true;
+
     private static readonly Brush Accent = (Brush)new BrushConverter().ConvertFrom("#4F46E5")!;
     private static readonly Brush Good = (Brush)new BrushConverter().ConvertFrom("#16A34A")!;
     private static readonly Brush Warn = (Brush)new BrushConverter().ConvertFrom("#F59E0B")!;
@@ -51,6 +61,7 @@ public partial class MainWindow : Window
         ModelBox.SelectedItem = Models.Contains(_settings.Model) ? _settings.Model : "small";
         TimestampsBox.IsChecked = _settings.Timestamps;
         SaveAudioBox.IsChecked = _settings.SaveAudio;
+        LiveBox.IsChecked = _settings.Live;
         VocabBox.Text = _settings.Vocabulary;
 
         _recorder.LevelChanged += (db, frac, clip) =>
@@ -83,9 +94,9 @@ public partial class MainWindow : Window
     private AudioDevice? SelectedDevice() => DeviceBox.SelectedItem as AudioDevice;
 
     // ---------- Opname ----------
-    private void Record_Click(object sender, RoutedEventArgs e)
+    private async void Record_Click(object sender, RoutedEventArgs e)
     {
-        if (_recorder.IsRecording) StopRecording();
+        if (_recorder.IsRecording) await StopRecording();
         else StartRecording();
     }
 
@@ -110,11 +121,41 @@ public partial class MainWindow : Window
         RecordBtn.Content = "■  Opname stoppen";
         RecordBtn.Style = (Style)FindResource("RecordingButton");
         FileBtn.IsEnabled = false;
-        SetStatus(_keepAudio ? $"Opname loopt… (opslag: {path})" : "Opname loopt… spreek maar.", Rec);
+        _tempAudio = _keepAudio ? null : path;
+
+        if (LiveBox.IsChecked == true)
+        {
+            // Vastleggen wat we tijdens deze opname gebruiken (UI mag niet wijzigen).
+            _liveModel = (string)ModelBox.SelectedItem;
+            _liveLang = Languages[(string)LangBox.SelectedItem];
+            _liveVocab = VocabBox.Text.Trim();
+            _liveTimestamps = TimestampsBox.IsChecked == true;
+            _liveSegments = new List<TranscriptSegment>();
+            _liveCutSamples = 0;
+            ClearTranscript();
+            SetStatus("Live transcriberen… spreek maar.", Rec);
+
+            // Model alvast (laten) laden terwijl je spreekt.
+            _ = _transcriber.EnsureReadyAsync(_liveModel);
+            _liveCts = new CancellationTokenSource();
+            _liveTask = LiveLoop(_liveCts.Token);
+        }
+        else
+        {
+            SetStatus(_keepAudio ? $"Opname loopt… (opslag: {path})" : "Opname loopt… spreek maar.", Rec);
+        }
     }
 
-    private void StopRecording()
+    private async Task StopRecording()
     {
+        bool live = _liveTask != null;
+        if (live)
+        {
+            _liveCts!.Cancel();
+            try { await _liveTask!; } catch { }
+            _liveTask = null;
+        }
+
         var samples = _recorder.Stop();
         RecordBtn.Content = "●  Opname starten";
         RecordBtn.Style = (Style)FindResource("AccentButton");
@@ -127,12 +168,81 @@ public partial class MainWindow : Window
             SetStatus("Geen audio opgenomen.", Good);
             return;
         }
+
+        if (live)
+        {
+            // Verwerk het laatste stuk dat nog niet live is getranscribeerd.
+            if (samples.Length > _liveCutSamples)
+            {
+                SetStatus("Laatste stuk transcriberen…", Warn);
+                var tail = samples[_liveCutSamples..];
+                await TranscribeLiveChunk(tail, _liveCutSamples / 16000.0, CancellationToken.None);
+            }
+            _result = _liveSegments;
+            SaveBtn.IsEnabled = _liveSegments.Count > 0;
+            SetStatus(_recorder.Clipped ? "Klaar. (let op: oversturing gehoord)" : "Klaar.", Good);
+            CleanupTemp();
+            ResetLevelBar();
+            return;
+        }
+
         SetStatus(_recorder.Clipped
             ? "Let op: oversturing gedetecteerd. Transcriberen…"
             : "Opname gestopt. Transcriberen…", Warn);
-
-        _tempAudio = _keepAudio ? null : _recorder.Path;
         _ = RunTranscription(samples);
+    }
+
+    // ---------- Live-transcriptie ----------
+    private async Task LiveLoop(CancellationToken token)
+    {
+        const double minChunk = 2.5;  // niet te korte stukjes
+        const double maxChunk = 18.0; // forceer een knip bij doorpraten
+        const double silenceCut = 0.6; // knip na een pauze
+
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(350, token);
+                if (!_transcriber.IsReady(_liveModel)) continue; // wacht tot model klaar is
+
+                int total = _recorder.SampleCount;
+                int pending = total - _liveCutSamples;
+                double pendingSec = pending / 16000.0;
+                if (pendingSec < minChunk) continue;
+
+                bool silent = _recorder.TrailingSilenceSeconds >= silenceCut;
+                if (silent || pendingSec >= maxChunk)
+                {
+                    var chunk = _recorder.Snapshot(_liveCutSamples, pending);
+                    double offset = _liveCutSamples / 16000.0;
+                    _liveCutSamples = total;
+                    if (chunk.Length > 0)
+                        await TranscribeLiveChunk(chunk, offset, token);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normaal bij stoppen.
+        }
+        catch (Exception ex)
+        {
+            Dispatcher.Invoke(() => SetStatus($"Live-fout: {ex.Message}", Bad));
+        }
+    }
+
+    private async Task TranscribeLiveChunk(float[] chunk, double offsetSeconds, CancellationToken token)
+    {
+        await _transcriber.TranscribeAsync(
+            chunk, _liveModel, _liveLang, _liveVocab,
+            seg => Dispatcher.Invoke(() =>
+            {
+                _liveSegments.Add(seg);
+                AppendSegment(seg, _liveTimestamps);
+                SaveBtn.IsEnabled = true;
+            }),
+            token, offsetSeconds, announce: false);
     }
 
     private void UpdateLevel(double dbfs, double fraction, bool clipping)
@@ -307,6 +417,7 @@ public partial class MainWindow : Window
 
     private void OnClosing()
     {
+        try { _liveCts?.Cancel(); } catch { }
         if (_recorder.IsRecording)
         {
             try { _recorder.Stop(); } catch { }
@@ -315,6 +426,7 @@ public partial class MainWindow : Window
         _settings.Model = (string)ModelBox.SelectedItem;
         _settings.Timestamps = TimestampsBox.IsChecked == true;
         _settings.SaveAudio = SaveAudioBox.IsChecked == true;
+        _settings.Live = LiveBox.IsChecked == true;
         _settings.Device = DeviceBox.SelectedItem?.ToString();
         _settings.Vocabulary = VocabBox.Text.Trim();
         _settings.Save();
