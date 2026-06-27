@@ -61,8 +61,11 @@ public class Transcriber
         await EnsureReadyAsync(modelSize, ct);
 
         // "auto" laat whisper de taal zelf detecteren (NL/EN/…).
+        // WithNoContext(true): niet voortborduren op eerder gegenereerde tekst,
+        // wat afdwalen/herhalen (hallucinaties) flink vermindert.
         var builder = _factory!.CreateBuilder()
-            .WithLanguage(string.IsNullOrEmpty(language) ? "auto" : language);
+            .WithLanguage(string.IsNullOrEmpty(language) ? "auto" : language)
+            .WithNoContext();
 
         // Prompt = woordenlijst + (bij live) de voorgaande tekst als context.
         var promptParts = new List<string>();
