@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private readonly Transcriber _transcriber = new();
     private readonly Summarizer _summarizer = new();
     private readonly SpeakerDiarizer _diarizer = new();
+    private readonly VoiceActivity _vad = new();
 
     private List<SpeakerTurn>? _lastTurns;                 // laatste diarization-resultaat
     private Dictionary<int, string> _speakerNames = new(); // hernoemde sprekers
@@ -68,6 +69,7 @@ public partial class MainWindow : Window
         SaveAudioBox.IsChecked = _settings.SaveAudio;
         LiveBox.IsChecked = _settings.Live;
         DiarizeBox.IsChecked = _settings.Diarize;
+        VadBox.IsChecked = _settings.Vad;
         VocabBox.Text = _settings.Vocabulary;
 
         _recorder.LevelChanged += (db, frac, clip) =>
@@ -78,6 +80,9 @@ public partial class MainWindow : Window
             Dispatcher.Invoke(() => ShowDownloadProgress(frac));
         _diarizer.Status += msg => Dispatcher.Invoke(() => SetStatus(msg, Warn));
         _diarizer.DownloadProgress += frac =>
+            Dispatcher.Invoke(() => ShowDownloadProgress(frac));
+        _vad.Status += msg => Dispatcher.Invoke(() => SetStatus(msg, Warn));
+        _vad.DownloadProgress += frac =>
             Dispatcher.Invoke(() => ShowDownloadProgress(frac));
 
         PopulateDevices();
@@ -348,9 +353,14 @@ public partial class MainWindow : Window
 
         try
         {
-            var segments = await Task.Run(() => _transcriber.TranscribeAsync(
-                samples, model, language, vocab,
-                seg => Dispatcher.Invoke(() => AppendSegment(seg, timestamps))));
+            List<TranscriptSegment> segments;
+            if (VadBox.IsChecked == true)
+                segments = await TranscribeViaVad(samples, model, language, vocab, timestamps);
+            else
+                segments = await Task.Run(() => _transcriber.TranscribeAsync(
+                    samples, model, language, vocab,
+                    seg => Dispatcher.Invoke(() => AppendSegment(seg, timestamps))));
+
             _result = segments;
             EnableResultButtons(segments.Count > 0);
 
@@ -370,6 +380,32 @@ public partial class MainWindow : Window
             CleanupTemp();
             ResetLevelBar();
         }
+    }
+
+    private async Task<List<TranscriptSegment>> TranscribeViaVad(
+        float[] samples, string model, string language, string vocab, bool timestamps)
+    {
+        var chunks = await _vad.SegmentAsync(samples);
+
+        // Geen spraak gevonden -> val terug op de hele opname.
+        if (chunks.Count == 0)
+            return await Task.Run(() => _transcriber.TranscribeAsync(
+                samples, model, language, vocab,
+                seg => Dispatcher.Invoke(() => AppendSegment(seg, timestamps))));
+
+        var all = new List<TranscriptSegment>();
+        await Task.Run(async () =>
+        {
+            foreach (var c in chunks)
+            {
+                var segs = await _transcriber.TranscribeAsync(
+                    c.Samples, model, language, vocab,
+                    seg => Dispatcher.Invoke(() => AppendSegment(seg, timestamps)),
+                    timeOffsetSeconds: c.OffsetSeconds, announce: false);
+                all.AddRange(segs);
+            }
+        });
+        return all;
     }
 
     private async Task RunDiarization(float[] samples, bool timestamps)
@@ -546,6 +582,7 @@ public partial class MainWindow : Window
         _settings.SaveAudio = SaveAudioBox.IsChecked == true;
         _settings.Live = LiveBox.IsChecked == true;
         _settings.Diarize = DiarizeBox.IsChecked == true;
+        _settings.Vad = VadBox.IsChecked == true;
         _settings.Device = DeviceBox.SelectedItem?.ToString();
         _settings.Vocabulary = VocabBox.Text.Trim();
         _settings.Save();

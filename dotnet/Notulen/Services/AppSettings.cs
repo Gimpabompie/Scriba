@@ -16,6 +16,7 @@ public class AppSettings
     public bool SaveAudio { get; set; } = true;
     public bool Live { get; set; } = false;
     public bool Diarize { get; set; } = false;
+    public bool Vad { get; set; } = true;
     public string? Device { get; set; }
 
     private static string Dir =>
