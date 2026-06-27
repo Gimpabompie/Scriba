@@ -22,12 +22,11 @@ makkelijk te distribueren** variant: een self-contained app, geen Python nodig.
 - 📒 Woordenlijst (namen/jargon) — wordt onthouden.
 - ⏱️ Tijdstempels aan/uit; opslaan als `.txt` of `.md`.
 - ⚡ **Live transcriberen** tijdens het spreken (knipt op stiltes).
+- 🗣️ **Sprekerherkenning** (offline, sherpa-onnx): labelt "Spreker 1/2/…" in de
+  notulen, met de mogelijkheid om sprekers te **hernoemen** (Spreker 1 → Jan).
 - ✨ **Samenvatten** met een lokaal taalmodel: korte samenvatting, besluiten en
   actiepunten in het Nederlands. Het samenvattingsmodel (~2 GB) wordt eenmalig
   gedownload; daarna offline.
-
-> Sprekerherkenning ("wie zei wat") zit nog niet in deze .NET-versie. De
-> Python-versie (map hierboven) heeft die functie wel.
 
 ## Downloaden (geen Python nodig)
 

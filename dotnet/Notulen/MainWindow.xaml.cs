@@ -26,6 +26,10 @@ public partial class MainWindow : Window
     private readonly AudioRecorder _recorder = new();
     private readonly Transcriber _transcriber = new();
     private readonly Summarizer _summarizer = new();
+    private readonly SpeakerDiarizer _diarizer = new();
+
+    private List<SpeakerTurn>? _lastTurns;                 // laatste diarization-resultaat
+    private Dictionary<int, string> _speakerNames = new(); // hernoemde sprekers
 
     private List<TranscriptSegment>? _result;
     private bool _busy;
@@ -63,6 +67,7 @@ public partial class MainWindow : Window
         TimestampsBox.IsChecked = _settings.Timestamps;
         SaveAudioBox.IsChecked = _settings.SaveAudio;
         LiveBox.IsChecked = _settings.Live;
+        DiarizeBox.IsChecked = _settings.Diarize;
         VocabBox.Text = _settings.Vocabulary;
 
         _recorder.LevelChanged += (db, frac, clip) =>
@@ -70,6 +75,9 @@ public partial class MainWindow : Window
         _transcriber.Status += msg =>
             Dispatcher.Invoke(() => SetStatus(msg, _busy ? Warn : Good));
         _transcriber.DownloadProgress += frac =>
+            Dispatcher.Invoke(() => ShowDownloadProgress(frac));
+        _diarizer.Status += msg => Dispatcher.Invoke(() => SetStatus(msg, Warn));
+        _diarizer.DownloadProgress += frac =>
             Dispatcher.Invoke(() => ShowDownloadProgress(frac));
 
         PopulateDevices();
@@ -345,6 +353,10 @@ public partial class MainWindow : Window
                 seg => Dispatcher.Invoke(() => AppendSegment(seg, timestamps))));
             _result = segments;
             EnableResultButtons(segments.Count > 0);
+
+            if (DiarizeBox.IsChecked == true && segments.Count > 0)
+                await RunDiarization(samples, timestamps);
+
             SetStatus("Klaar.", Good);
         }
         catch (Exception ex)
@@ -357,6 +369,53 @@ public partial class MainWindow : Window
             SetBusy(false);
             CleanupTemp();
             ResetLevelBar();
+        }
+    }
+
+    private async Task RunDiarization(float[] samples, bool timestamps)
+    {
+        try
+        {
+            var turns = await _diarizer.DiarizeAsync(samples);
+            _lastTurns = turns;
+            _speakerNames = new Dictionary<int, string>();
+            if (_result != null && turns.Count > 0)
+            {
+                _result = SpeakerDiarizer.AssignSpeakers(_result, turns);
+                RenderResult(timestamps);
+                RenameSpeakersBtn.IsEnabled = true;
+                int n = turns.Select(t => t.Speaker).Distinct().Count();
+                SetStatus($"{n} spreker(s) herkend.", Good);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                "Sprekerherkenning is niet gelukt:\n" + ex.Message +
+                "\n\nDe transcriptie zelf is wel klaar.",
+                "Sprekers", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void RenderResult(bool timestamps)
+    {
+        if (_result == null) return;
+        _hasPlaceholder = false;
+        TranscriptBox.Foreground = (Brush)FindResource("Ink");
+        TranscriptBox.Text = Minutes.Format(_result, timestamps);
+        TranscriptBox.ScrollToEnd();
+    }
+
+    private void RenameSpeakers_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastTurns == null || _result == null) return;
+        var ids = _lastTurns.Select(t => t.Speaker).Distinct().OrderBy(x => x).ToList();
+        var dlg = new RenameSpeakersWindow(ids, _speakerNames) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            _speakerNames = dlg.Names;
+            _result = SpeakerDiarizer.AssignSpeakers(_result, _lastTurns, _speakerNames);
+            RenderResult(TimestampsBox.IsChecked == true);
         }
     }
 
@@ -421,6 +480,9 @@ public partial class MainWindow : Window
         TranscriptBox.Foreground = (Brush)FindResource("Ink");
         _hasPlaceholder = false;
         _result = null;
+        _lastTurns = null;
+        _speakerNames = new Dictionary<int, string>();
+        RenameSpeakersBtn.IsEnabled = false;
         EnableResultButtons(false);
     }
 
@@ -483,6 +545,7 @@ public partial class MainWindow : Window
         _settings.Timestamps = TimestampsBox.IsChecked == true;
         _settings.SaveAudio = SaveAudioBox.IsChecked == true;
         _settings.Live = LiveBox.IsChecked == true;
+        _settings.Diarize = DiarizeBox.IsChecked == true;
         _settings.Device = DeviceBox.SelectedItem?.ToString();
         _settings.Vocabulary = VocabBox.Text.Trim();
         _settings.Save();
