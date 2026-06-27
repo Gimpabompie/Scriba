@@ -6,7 +6,7 @@ using Whisper.net;
 
 namespace Notulen.Services;
 
-public record TranscriptSegment(TimeSpan Start, TimeSpan End, string Text);
+public record TranscriptSegment(TimeSpan Start, TimeSpan End, string Text, string? Speaker = null);
 
 /// <summary>
 /// Offline transcriptie via Whisper.net (whisper.cpp). Het ggml-model wordt
@@ -192,15 +192,22 @@ public static class Minutes
 {
     public static string Format(IEnumerable<TranscriptSegment> segments, bool withTimestamps)
     {
+        var list = segments.ToList();
+        bool hasSpeakers = list.Any(s => !string.IsNullOrEmpty(s.Speaker));
+
+        // Zonder tijdstempels én zonder sprekers: één doorlopende tekst.
+        if (!withTimestamps && !hasSpeakers)
+            return string.Join(" ", list.Select(s => s.Text.Trim())).Trim();
+
         var sb = new StringBuilder();
-        foreach (var s in segments)
+        foreach (var s in list)
         {
             if (withTimestamps)
                 sb.Append($"[{Ts(s.Start)} - {Ts(s.End)}] ");
+            if (!string.IsNullOrEmpty(s.Speaker))
+                sb.Append($"{s.Speaker}: ");
             sb.AppendLine(s.Text.Trim());
         }
-        if (!withTimestamps)
-            return string.Join(" ", segments.Select(s => s.Text.Trim())).Trim();
         return sb.ToString().TrimEnd();
     }
 

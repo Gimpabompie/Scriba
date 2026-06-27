@@ -30,6 +30,12 @@ Scriba gebruikt twee modellen die normaal van Hugging Face komen:
 |---|---|---|
 | Transcriptie (Whisper) | `ggml-medium.bin` (of `ggml-small.bin`, …) | ~0,5–1,5 GB |
 | Samenvatten (LLM) | `Qwen2.5-3B-Instruct-Q4_K_M.gguf` | ~2 GB |
+| Sprekers — segmentatie | `diar-segmentation.onnx` | ~6 MB |
+| Sprekers — embedding | `diar-embedding.onnx` | ~25 MB |
+
+> De spreker-modellen zijn alleen nodig als je **Sprekers herkennen** gebruikt.
+> Plaats de twee `.onnx`-bestanden onder dezelfde naam in de modelmap, of laat
+> Scriba ze eenmalig downloaden (URL's te overschrijven, zie hieronder).
 
 Zonder internet kan de app deze niet zelf ophalen. Kies één aanpak:
 
@@ -75,6 +81,8 @@ Bij `SCRIBA_MODEL_BASEURL` haalt de app `<baseurl>/ggml-<model>.bin` op.
 | `SCRIBA_MODELS_DIR` | Map waarin eerst naar bestaande modellen wordt gezocht |
 | `SCRIBA_MODEL_BASEURL` | Alternatieve basis-URL voor de Whisper-modellen |
 | `SCRIBA_LLM_URL` | Alternatieve volledige URL voor het samenvattingsmodel |
+| `SCRIBA_DIAR_SEG_URL` | Alternatieve URL voor het spreker-segmentatiemodel |
+| `SCRIBA_DIAR_EMB_URL` | Alternatieve URL voor het spreker-embeddingmodel |
 
 ## 4. SmartScreen / Defender (niet-ondertekend)
 

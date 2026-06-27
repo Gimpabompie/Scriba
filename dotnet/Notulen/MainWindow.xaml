@@ -56,6 +56,7 @@
                         <StackPanel Grid.Row="1" Grid.Column="2" VerticalAlignment="Center">
                             <CheckBox x:Name="LiveBox" Content="Live transcriberen (tijdens spreken)" />
                             <CheckBox x:Name="TimestampsBox" Content="Tijdstempels" Margin="0,4,0,0" />
+                            <CheckBox x:Name="DiarizeBox" Content="Sprekers herkennen" Margin="0,4,0,0" />
                         </StackPanel>
 
                         <Separator Grid.Row="2" Grid.ColumnSpan="3" Margin="0,12"
@@ -134,6 +135,9 @@
                                 <Button x:Name="ClearBtn" Content="Wissen"
                                         Style="{StaticResource SecondaryButton}"
                                         Margin="0,0,8,0" Click="Clear_Click" />
+                                <Button x:Name="RenameSpeakersBtn" Content="🧑  Sprekers hernoemen"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Margin="0,0,8,0" IsEnabled="False" Click="RenameSpeakers_Click" />
                                 <Button x:Name="SummarizeBtn" Content="✨  Vat samen"
                                         Style="{StaticResource SecondaryButton}"
                                         Margin="0,0,8,0" IsEnabled="False" Click="Summarize_Click" />
