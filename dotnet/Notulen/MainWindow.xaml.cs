@@ -17,7 +17,7 @@ public partial class MainWindow : Window
         ["Engels"] = "en",
     };
 
-    private static readonly string[] Models = { "tiny", "base", "small", "medium", "large-v3-turbo", "large-v3" };
+    private static readonly string[] Models = { "tiny", "base", "small", "medium", "large-v3-turbo-licht", "large-v3-turbo", "large-v3" };
 
     private const string Placeholder =
         "Het transcript verschijnt hier zodra je opneemt of een audiobestand laadt.";

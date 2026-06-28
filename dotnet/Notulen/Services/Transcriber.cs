@@ -25,6 +25,7 @@ public class Transcriber
         ["base"] = "ggml-base.bin",
         ["small"] = "ggml-small.bin",
         ["medium"] = "ggml-medium.bin",
+        ["large-v3-turbo-licht"] = "ggml-large-v3-turbo-q5_0.bin",
         ["large-v3-turbo"] = "ggml-large-v3-turbo.bin",
         ["large-v3"] = "ggml-large-v3.bin",
     };
@@ -44,8 +45,39 @@ public class Transcriber
         var modelPath = await EnsureModelAsync(modelSize, ct);
         Status?.Invoke("Model laden…");
         _factory?.Dispose();
-        _factory = WhisperFactory.FromPath(modelPath);
+        try
+        {
+            _factory = WhisperFactory.FromPath(modelPath);
+        }
+        catch (Exception ex)
+        {
+            // Beschadigd/onleesbaar model: verwijderen zodat het opnieuw wordt
+            // gedownload, en een nette melding geven i.p.v. een crash.
+            try { File.Delete(modelPath); } catch { }
+            _factory = null;
+            throw new InvalidOperationException(
+                "Het model kon niet geladen worden (mogelijk beschadigd of " +
+                "onvolledig gedownload). Het bestand is verwijderd — probeer het " +
+                "opnieuw, dan wordt het opnieuw opgehaald.\n\n(detail: " + ex.Message + ")", ex);
+        }
         _loadedModel = modelSize;
+    }
+
+    /// <summary>Controleer of een bestand een geldig ggml/GGUF-model lijkt.</summary>
+    private static bool LooksLikeModel(string path)
+    {
+        try
+        {
+            var fi = new FileInfo(path);
+            if (!fi.Exists || fi.Length < 1_000_000) return false; // < 1 MB = niet goed
+            using var fs = File.OpenRead(path);
+            var b = new byte[4];
+            if (fs.Read(b, 0, 4) < 4) return false;
+            // "ggml" of "GGUF"
+            return (b[0] == 0x67 && b[1] == 0x67 && b[2] == 0x6d && b[3] == 0x6c) ||
+                   (b[0] == 0x47 && b[1] == 0x47 && b[2] == 0x55 && b[3] == 0x46);
+        }
+        catch { return false; }
     }
 
     public async Task<List<TranscriptSegment>> TranscribeAsync(
@@ -97,13 +129,16 @@ public class Transcriber
         var file = ModelFiles.GetValueOrDefault(size, "ggml-small.bin");
 
         // Eerst zoeken naar een vooraf geplaatst model (bv. op een netwerkshare
-        // via NOTULEN_MODELS_DIR). Op afgeschermde netwerken wordt zo niets
-        // gedownload.
+        // via SCRIBA_MODELS_DIR). Op afgeschermde netwerken wordt zo niets
+        // gedownload. Alleen hergebruiken als het bestand er geldig uitziet.
         var existing = AppSettings.FindExistingModel(file);
-        if (existing != null) return existing;
+        if (existing != null && LooksLikeModel(existing)) return existing;
 
         Directory.CreateDirectory(AppSettings.ModelsDir);
         var path = Path.Combine(AppSettings.ModelsDir, file);
+
+        // Eerder (beschadigd) bestand opruimen zodat het opnieuw wordt opgehaald.
+        try { if (File.Exists(path)) File.Delete(path); } catch { }
 
         Status?.Invoke($"Model '{size}' wordt eenmalig gedownload…");
         // Interne spiegel mogelijk via SCRIBA_MODEL_BASEURL.
@@ -146,6 +181,16 @@ public class Transcriber
 
         File.Move(tmp, path, true);
         DownloadProgress?.Invoke(1.0);
+
+        // Controleer of het gedownloade bestand een geldig model is (niet bv.
+        // een foutpagina). Zo niet: verwijderen en een nette melding geven.
+        if (!LooksLikeModel(path))
+        {
+            try { File.Delete(path); } catch { }
+            throw new InvalidOperationException(
+                "De download van het model lijkt mislukt of beschadigd " +
+                $"('{file}'). Controleer de internetverbinding en probeer opnieuw.");
+        }
         return path;
     }
 
