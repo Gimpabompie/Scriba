@@ -25,6 +25,7 @@ public class Transcriber
         ["base"] = "ggml-base.bin",
         ["small"] = "ggml-small.bin",
         ["medium"] = "ggml-medium.bin",
+        ["large-v3-turbo-licht"] = "ggml-large-v3-turbo-q5_0.bin",
         ["large-v3-turbo"] = "ggml-large-v3-turbo.bin",
         ["large-v3"] = "ggml-large-v3.bin",
     };
