@@ -19,6 +19,10 @@ jobs:
   build:
     runs-on: windows-latest
 
+    # Nodig om een GitHub Release te kunnen aanmaken.
+    permissions:
+      contents: write
+
     # Code-signing is optioneel: zonder deze secrets slaat het ondertekenen
     # zichzelf over en blijft de build gewoon werken.
     env:
@@ -66,3 +70,25 @@ jobs:
           name: scriba-installer
           path: dotnet/installer/Output/Scriba-Setup.exe
           if-no-files-found: error
+
+      # Alleen op main: een Release met één-klik downloadlink (installer).
+      - name: App-map inpakken voor de Release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: Compress-Archive -Path dotnet/Notulen/publish/* -DestinationPath Scriba-app.zip
+
+      - name: GitHub Release publiceren
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Scriba v1.0.${{ github.run_number }}
+          body: |
+            Automatische build van Scriba.
+
+            **Downloaden:** `Scriba-Setup.exe` (installer) of `Scriba-app.zip` (uitpakken en `Scriba.exe` starten).
+
+            Niet ondertekend: bij de eerste start kan Windows SmartScreen waarschuwen → *Meer info → Toch uitvoeren*.
+          files: |
+            dotnet/installer/Output/Scriba-Setup.exe
+            Scriba-app.zip
+          make_latest: true

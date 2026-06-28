@@ -18,7 +18,8 @@
             <StackPanel Margin="20,16">
                 <TextBlock Text="📝  Scriba" Foreground="White"
                            FontSize="22" FontWeight="Bold" />
-                <TextBlock Text="Offline spraak naar tekst · Nederlands &amp; Engels"
+                <TextBlock x:Name="SubtitleText"
+                           Text="Offline spraak naar tekst · Nederlands &amp; Engels"
                            Foreground="#FFE0E7FF" FontSize="12" Margin="0,2,0,0" />
             </StackPanel>
         </Border>
