@@ -64,7 +64,7 @@ public partial class MainWindow : Window
         ModelBox.ItemsSource = Models;
         LangBox.SelectedItem = Languages.ContainsKey(_settings.Language)
             ? _settings.Language : "Automatisch detecteren";
-        ModelBox.SelectedItem = Models.Contains(_settings.Model) ? _settings.Model : "small";
+        ModelBox.SelectedItem = Models.Contains(_settings.Model) ? _settings.Model : "medium";
         TimestampsBox.IsChecked = _settings.Timestamps;
         SaveAudioBox.IsChecked = _settings.SaveAudio;
         LiveBox.IsChecked = _settings.Live;
@@ -87,6 +87,25 @@ public partial class MainWindow : Window
 
         PopulateDevices();
         Closing += (_, _) => OnClosing();
+
+        // Versienummer tonen.
+        var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        if (v != null)
+            SubtitleText.Text = $"Offline spraak naar tekst · Nederlands & Engels · v{v.Major}.{v.Minor}.{v.Build}";
+
+        // Eenmalige welkomstuitleg bij de allereerste start.
+        if (!_settings.Welcomed)
+        {
+            Loaded += (_, _) => MessageBox.Show(this,
+                "Welkom bij Scriba!\n\n" +
+                "• Bij je eerste transcriptie wordt eenmalig een taalmodel gedownload " +
+                "(±1,5 GB voor 'medium'). Daarna werkt alles offline.\n" +
+                "• Aanbevolen: Taal = Nederlands, 'Stilte/ruis filteren' aan, 'Live' uit.\n" +
+                "• Na de transcriptie kun je met 🪄 Corrigeer en ✨ Vat samen verder.\n\n" +
+                "Tip: vul de woordenlijst met namen en vaktermen voor betere spelling.",
+                "Welkom bij Scriba", MessageBoxButton.OK, MessageBoxImage.Information);
+            _settings.Welcomed = true;
+        }
     }
 
     // ---------- Apparaten ----------

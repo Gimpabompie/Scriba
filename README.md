@@ -7,6 +7,11 @@ samenvatten gebeurt **lokaal**. Ideaal als privacy belangrijk is.
 > *Scriba* (Latijn voor schrijver/klerk) doet wat een notulist doet: meeluisteren
 > en optekenen.
 
+![Scriba in actie](docs/scriba-demo.gif)
+
+<sub>De animatie is een illustratieve weergave van de werkwijze. Zie
+[docs/README.md](docs/README.md) om er een echte schermopname van te maken.</sub>
+
 ## ✨ Functies
 
 - 🎙️ **Opnemen** via microfoon of **systeem-/vergaderaudio** (Teams/Zoom/Meet) —

@@ -10,7 +10,8 @@ namespace Notulen.Services;
 public class AppSettings
 {
     public string Language { get; set; } = "Nederlands";
-    public string Model { get; set; } = "small";
+    public string Model { get; set; } = "medium";
+    public bool Welcomed { get; set; } = false;
     public string Vocabulary { get; set; } = "";
     public bool Timestamps { get; set; } = true;
     public bool SaveAudio { get; set; } = true;
