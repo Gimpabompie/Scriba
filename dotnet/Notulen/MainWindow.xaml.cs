@@ -374,7 +374,23 @@ public partial class MainWindow : Window
         {
             List<TranscriptSegment> segments;
             if (VadBox.IsChecked == true)
-                segments = await TranscribeViaVad(samples, model, language, vocab, timestamps);
+            {
+                try
+                {
+                    segments = await TranscribeViaVad(samples, model, language, vocab, timestamps);
+                }
+                catch (Exception vex)
+                {
+                    // Spraakdetectie (VAD) faalde — geen reden om de hele
+                    // transcriptie te laten mislukken. We gaan door zonder filter.
+                    SetStatus("Spraakdetectie mislukt — transcriptie zonder filter.", Warn);
+                    System.Diagnostics.Debug.WriteLine("VAD-fout: " + vex);
+                    ClearTranscript();
+                    segments = await Task.Run(() => _transcriber.TranscribeAsync(
+                        samples, model, language, vocab,
+                        seg => Dispatcher.Invoke(() => AppendSegment(seg, timestamps))));
+                }
+            }
             else
                 segments = await Task.Run(() => _transcriber.TranscribeAsync(
                     samples, model, language, vocab,
