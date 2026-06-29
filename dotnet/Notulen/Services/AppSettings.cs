@@ -64,6 +64,46 @@ public class AppSettings
         return null;
     }
 
+    /// <summary>
+    /// Geef mogelijke bestanden voor een model terug: eerst de exacte naam, dan
+    /// varianten in dezelfde map (bv. een handmatig geplaatst bestand met een
+    /// net iets andere naam zoals 'ggml-medium.bin.bin' of 'ggml-medium (1).bin').
+    /// Zo wordt een door de gebruiker neergezet bestand alsnog herkend i.p.v.
+    /// onnodig opnieuw gedownload.
+    /// </summary>
+    public static IEnumerable<string> FindModelCandidates(string fileName)
+    {
+        var baseName = Path.GetFileNameWithoutExtension(fileName); // ggml-medium
+        var ext = Path.GetExtension(fileName);                     // .bin
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var dir in ModelSearchDirs())
+        {
+            string exact;
+            try { exact = Path.Combine(dir, fileName); }
+            catch { continue; }
+
+            if (TryFile(exact) && seen.Add(exact)) yield return exact;
+
+            IEnumerable<string> variants = Array.Empty<string>();
+            try
+            {
+                if (Directory.Exists(dir))
+                    variants = Directory.EnumerateFiles(dir, baseName + "*" + ext).ToList();
+            }
+            catch { /* onbruikbare map overslaan */ }
+
+            foreach (var v in variants)
+                if (TryFile(v) && seen.Add(v)) yield return v;
+        }
+
+        static bool TryFile(string p)
+        {
+            try { return File.Exists(p) && new FileInfo(p).Length > 0; }
+            catch { return false; }
+        }
+    }
+
     public static AppSettings Load()
     {
         try

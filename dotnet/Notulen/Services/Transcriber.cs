@@ -92,9 +92,18 @@ public class Transcriber
             using var fs = File.OpenRead(path);
             var b = new byte[4];
             if (fs.Read(b, 0, 4) < 4) return false;
-            // "ggml" of "GGUF"
-            return (b[0] == 0x67 && b[1] == 0x67 && b[2] == 0x6d && b[3] == 0x6c) ||
-                   (b[0] == 0x47 && b[1] == 0x47 && b[2] == 0x55 && b[3] == 0x46);
+
+            // ggml-magic (0x67676d6c) kan in beide byte-volgordes op schijf staan
+            // ("ggml" of, little-endian, "lmgg"); GGUF = "GGUF".
+            bool ggml = (b[0] == 0x67 && b[1] == 0x67 && b[2] == 0x6d && b[3] == 0x6c) ||
+                        (b[0] == 0x6c && b[1] == 0x6d && b[2] == 0x67 && b[3] == 0x67);
+            bool gguf = b[0] == 0x47 && b[1] == 0x47 && b[2] == 0x55 && b[3] == 0x46;
+            if (ggml || gguf) return true;
+
+            // Geen herkenbare magic, maar wel een groot, niet-HTML bestand (dus
+            // geen foutpagina/pointer): voor de zekerheid toch accepteren. Een
+            // foutpagina begint met '<' en is bovendien klein (< minSize).
+            return b[0] != (byte)'<';
         }
         catch { return false; }
     }
@@ -153,8 +162,10 @@ public class Transcriber
         // gedownload. Alleen hergebruiken als het bestand er geldig én volledig
         // uitziet — een eerder half/corrupt gedownload bestand wordt zo niet
         // hergebruikt, maar opnieuw opgehaald.
-        var existing = AppSettings.FindExistingModel(file);
-        if (existing != null && LooksLikeModel(existing, minSize)) return existing;
+        foreach (var cand in AppSettings.FindModelCandidates(file))
+        {
+            if (LooksLikeModel(cand, minSize)) return cand;
+        }
 
         Directory.CreateDirectory(AppSettings.ModelsDir);
         var path = Path.Combine(AppSettings.ModelsDir, file);
