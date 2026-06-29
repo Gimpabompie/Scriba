@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using Whisper.net;
 
@@ -165,50 +167,23 @@ public class Transcriber
         var baseUrl = Environment.GetEnvironmentVariable("SCRIBA_MODEL_BASEURL")?.TrimEnd('/')
                       ?? "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
         var url = $"{baseUrl}/{file}";
-
-        // Geen totale timeout: grote modellen (medium ~1,5 GB) mogen lang duren;
-        // we leunen op de CancellationToken om te kunnen afbreken.
-        using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-        using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
-        resp.EnsureSuccessStatusCode();
-
-        long total = resp.Content.Headers.ContentLength ?? -1L;
         var tmp = path + ".part";
 
-        long readTotal = 0;
-        await using (var fs = File.Create(tmp))
-        await using (var src = await resp.Content.ReadAsStreamAsync(ct))
+        // Grote modellen (medium ~1,5 GB) komen op een wisselvallige verbinding
+        // niet altijd in één keer binnen. We downloaden daarom hervatbaar: bij
+        // een afgebroken verbinding gaan we verder waar we gebleven waren
+        // (HTTP Range) i.p.v. opnieuw vanaf 0, met een paar automatische pogingen.
+        long total = await DownloadResumableAsync(url, tmp, size, minSize, ct);
+
+        // Volledigheidscontrole: is alles binnengekomen?
+        long got = File.Exists(tmp) ? new FileInfo(tmp).Length : 0;
+        if (total > 0 && got != total)
         {
-            var buffer = new byte[81920];
-            int read;
-            var sw = Stopwatch.StartNew();
-            var lastReport = TimeSpan.FromSeconds(-1);
-
-            while ((read = await src.ReadAsync(buffer, ct)) > 0)
-            {
-                await fs.WriteAsync(buffer.AsMemory(0, read), ct);
-                readTotal += read;
-
-                // Niet bij elke blok melden; ~3x per seconde is ruim genoeg.
-                if (sw.Elapsed - lastReport >= TimeSpan.FromMilliseconds(350))
-                {
-                    lastReport = sw.Elapsed;
-                    ReportDownload(size, readTotal, total, sw.Elapsed);
-                }
-            }
-            ReportDownload(size, readTotal, total, sw.Elapsed);
-        }
-
-        // Volledigheidscontrole: is alles binnengekomen? Een afgekapte download
-        // (verbinding/proxy die vroegtijdig sluit) levert anders een half model
-        // op dat de native loader hard laat crashen. Liever hier netjes falen.
-        if (total > 0 && readTotal != total)
-        {
-            try { File.Delete(tmp); } catch { }
             throw new InvalidOperationException(
                 $"De download van het model ('{file}') is onderbroken " +
-                $"({readTotal / 1048576} van {total / 1048576} MB ontvangen). " +
-                "Controleer de internetverbinding en probeer opnieuw.");
+                $"({got / 1048576} van {total / 1048576} MB ontvangen). " +
+                "De helft is bewaard — probeer opnieuw, dan gaat hij verder waar " +
+                "hij gebleven was.");
         }
 
         File.Move(tmp, path, true);
@@ -222,9 +197,114 @@ public class Transcriber
             try { File.Delete(path); } catch { }
             throw new InvalidOperationException(
                 "De download van het model lijkt mislukt of beschadigd " +
-                $"('{file}'). Controleer de internetverbinding en probeer opnieuw.");
+                $"('{file}'). Controleer de internetverbinding en probeer opnieuw. " +
+                "Lukt het downloaden niet (afgeschermd netwerk)? Plaats het bestand " +
+                $"'{file}' dan handmatig in:\n{AppSettings.ModelsDir}");
         }
         return path;
+    }
+
+    /// <summary>
+    /// Download <paramref name="url"/> naar <paramref name="tmp"/>, hervatbaar
+    /// (HTTP Range) en met automatische herpogingen bij netwerkfouten. Geeft de
+    /// verwachte totale grootte terug (of -1 als onbekend).
+    /// </summary>
+    private async Task<long> DownloadResumableAsync(string url, string tmp, string size, long minSize, CancellationToken ct)
+    {
+        const int maxAttempts = 6;
+        // Eén HttpClient hergebruiken over de pogingen heen.
+        using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        var sw = Stopwatch.StartNew();
+        var lastReport = TimeSpan.FromSeconds(-1);
+        long total = -1L;
+        Exception? last = null;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            long have = File.Exists(tmp) ? new FileInfo(tmp).Length : 0;
+
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                if (have > 0) req.Headers.Range = new RangeHeaderValue(have, null);
+
+                using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+
+                // Server negeert hervatten (geen 206) -> opnieuw vanaf 0 beginnen.
+                bool resuming = have > 0 && resp.StatusCode == HttpStatusCode.PartialContent;
+                if (have > 0 && !resuming)
+                {
+                    try { File.Delete(tmp); } catch { }
+                    have = 0;
+                }
+                // .part is al volledig volgens de server.
+                if (resp.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
+                {
+                    total = resp.Content.Headers.ContentRange?.Length ?? have;
+                    return total;
+                }
+                resp.EnsureSuccessStatusCode();
+
+                // Bij 206 is ContentLength de rest; bij 200 het geheel.
+                total = resp.Content.Headers.ContentRange?.Length
+                        ?? (resp.Content.Headers.ContentLength is long cl ? have + cl : -1L);
+
+                var mode = resuming ? FileMode.Append : FileMode.Create;
+                long readTotal = have;
+                await using (var fs = new FileStream(tmp, mode, FileAccess.Write, FileShare.None))
+                await using (var src = await resp.Content.ReadAsStreamAsync(ct))
+                {
+                    var buffer = new byte[81920];
+                    int read;
+                    while ((read = await src.ReadAsync(buffer, ct)) > 0)
+                    {
+                        await fs.WriteAsync(buffer.AsMemory(0, read), ct);
+                        readTotal += read;
+                        if (sw.Elapsed - lastReport >= TimeSpan.FromMilliseconds(350))
+                        {
+                            lastReport = sw.Elapsed;
+                            ReportDownload(size, readTotal, total, sw.Elapsed);
+                        }
+                    }
+                    ReportDownload(size, readTotal, total, sw.Elapsed);
+                }
+
+                // Compleet? Dan klaar. Anders: verbinding viel weg -> herpoging.
+                if (total > 0)
+                {
+                    if (readTotal >= total) return total;
+                }
+                else
+                {
+                    // Geen Content-Length: we kunnen volledigheid niet hard
+                    // vaststellen. Accepteren zodra we minstens de verwachte
+                    // ondergrens binnen hebben; anders hervatten.
+                    if (readTotal >= minSize) return total;
+                }
+                last = new IOException($"Verbinding viel weg op {readTotal} bytes (verwacht {(total > 0 ? total.ToString() : "onbekend")}).");
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                last = ex; // netwerkfout: hervatten in de volgende poging
+            }
+
+            if (attempt < maxAttempts)
+            {
+                int delaySec = Math.Min(16, 1 << (attempt - 1)); // 1,2,4,8,16,16…
+                Status?.Invoke($"Verbinding onderbroken — opnieuw proberen ({attempt}/{maxAttempts - 1})…");
+                await Task.Delay(TimeSpan.FromSeconds(delaySec), ct);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Het model kon na meerdere pogingen niet volledig worden gedownload. " +
+            "De voortgang is bewaard — probeer het later opnieuw, dan gaat hij " +
+            "verder waar hij gebleven was.", last);
     }
 
     private void ReportDownload(string size, long read, long total, TimeSpan elapsed)
