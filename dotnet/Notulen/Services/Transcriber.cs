@@ -30,6 +30,23 @@ public class Transcriber
         ["large-v3"] = "ggml-large-v3.bin",
     };
 
+    // Verwachte minimale bestandsgrootte per model (ruim onder de echte grootte).
+    // Een afgekapte/onvolledige download is kleiner dan dit en wordt geweigerd,
+    // zodat we nooit een half model aan de native loader geven (dat crasht hard).
+    private static readonly Dictionary<string, long> MinSizes = new()
+    {
+        ["tiny"] = 50L * 1024 * 1024,    // ~75 MB
+        ["base"] = 100L * 1024 * 1024,   // ~142 MB
+        ["small"] = 350L * 1024 * 1024,  // ~466 MB
+        ["medium"] = 1300L * 1024 * 1024, // ~1,5 GB
+        ["large-v3-turbo-licht"] = 450L * 1024 * 1024, // ~547 MB
+        ["large-v3-turbo"] = 1400L * 1024 * 1024,      // ~1,6 GB
+        ["large-v3"] = 2800L * 1024 * 1024,            // ~3,1 GB
+    };
+
+    private static long MinSizeFor(string size) =>
+        MinSizes.TryGetValue(size, out var m) ? m : 1_000_000L;
+
     // Het geladen model wordt hergebruikt (belangrijk voor live: niet per
     // stukje het hele model opnieuw inladen).
     private WhisperFactory? _factory;
@@ -64,12 +81,12 @@ public class Transcriber
     }
 
     /// <summary>Controleer of een bestand een geldig ggml/GGUF-model lijkt.</summary>
-    private static bool LooksLikeModel(string path)
+    private static bool LooksLikeModel(string path, long minSize = 1_000_000)
     {
         try
         {
             var fi = new FileInfo(path);
-            if (!fi.Exists || fi.Length < 1_000_000) return false; // < 1 MB = niet goed
+            if (!fi.Exists || fi.Length < minSize) return false; // te klein = onvolledig
             using var fs = File.OpenRead(path);
             var b = new byte[4];
             if (fs.Read(b, 0, 4) < 4) return false;
@@ -127,12 +144,15 @@ public class Transcriber
     private async Task<string> EnsureModelAsync(string size, CancellationToken ct)
     {
         var file = ModelFiles.GetValueOrDefault(size, "ggml-small.bin");
+        var minSize = MinSizeFor(size);
 
         // Eerst zoeken naar een vooraf geplaatst model (bv. op een netwerkshare
         // via SCRIBA_MODELS_DIR). Op afgeschermde netwerken wordt zo niets
-        // gedownload. Alleen hergebruiken als het bestand er geldig uitziet.
+        // gedownload. Alleen hergebruiken als het bestand er geldig én volledig
+        // uitziet — een eerder half/corrupt gedownload bestand wordt zo niet
+        // hergebruikt, maar opnieuw opgehaald.
         var existing = AppSettings.FindExistingModel(file);
-        if (existing != null && LooksLikeModel(existing)) return existing;
+        if (existing != null && LooksLikeModel(existing, minSize)) return existing;
 
         Directory.CreateDirectory(AppSettings.ModelsDir);
         var path = Path.Combine(AppSettings.ModelsDir, file);
@@ -155,11 +175,11 @@ public class Transcriber
         long total = resp.Content.Headers.ContentLength ?? -1L;
         var tmp = path + ".part";
 
+        long readTotal = 0;
         await using (var fs = File.Create(tmp))
         await using (var src = await resp.Content.ReadAsStreamAsync(ct))
         {
             var buffer = new byte[81920];
-            long readTotal = 0;
             int read;
             var sw = Stopwatch.StartNew();
             var lastReport = TimeSpan.FromSeconds(-1);
@@ -179,12 +199,25 @@ public class Transcriber
             ReportDownload(size, readTotal, total, sw.Elapsed);
         }
 
+        // Volledigheidscontrole: is alles binnengekomen? Een afgekapte download
+        // (verbinding/proxy die vroegtijdig sluit) levert anders een half model
+        // op dat de native loader hard laat crashen. Liever hier netjes falen.
+        if (total > 0 && readTotal != total)
+        {
+            try { File.Delete(tmp); } catch { }
+            throw new InvalidOperationException(
+                $"De download van het model ('{file}') is onderbroken " +
+                $"({readTotal / 1048576} van {total / 1048576} MB ontvangen). " +
+                "Controleer de internetverbinding en probeer opnieuw.");
+        }
+
         File.Move(tmp, path, true);
         DownloadProgress?.Invoke(1.0);
 
-        // Controleer of het gedownloade bestand een geldig model is (niet bv.
-        // een foutpagina). Zo niet: verwijderen en een nette melding geven.
-        if (!LooksLikeModel(path))
+        // Controleer of het gedownloade bestand een geldig én volledig model is
+        // (niet bv. een foutpagina of een te klein/afgekapt bestand). Zo niet:
+        // verwijderen en een nette melding geven i.p.v. een crash.
+        if (!LooksLikeModel(path, minSize))
         {
             try { File.Delete(path); } catch { }
             throw new InvalidOperationException(
