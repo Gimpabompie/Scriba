@@ -62,6 +62,29 @@ public class Transcriber
     {
         if (IsReady(modelSize)) return;
         var modelPath = await EnsureModelAsync(modelSize, ct);
+
+        // Eerst veilig testladen in een apart proces. Een onvolledig/corrupt of
+        // incompatibel model laat de native lader hard crashen (AccessViolation,
+        // niet op te vangen in .NET). Crasht het hulpproces, dan blijft Scriba
+        // zelf overeind en geven we hieronder een nette melding.
+        Status?.Invoke("Model controleren…");
+        if (!await ProbeModelInSeparateProcessAsync(modelPath, ct))
+        {
+            // Alleen onze eigen gedownloade kopie opruimen; een door de gebruiker
+            // handmatig geplaatst bestand laten we staan.
+            if (IsInDownloadDir(modelPath))
+                try { File.Delete(modelPath); } catch { }
+
+            throw new InvalidOperationException(
+                "Het gekozen model kon niet geladen worden — het bestand is " +
+                "waarschijnlijk onvolledig of beschadigd gedownload.\n\n" +
+                "Wat je kunt doen:\n" +
+                "• Kies een ander model, bijv. 'large-v3-turbo-licht' (kleiner én " +
+                "beter dan medium) of 'small'.\n" +
+                "• Of download het modelbestand opnieuw (volledig) en plaats het in:\n" +
+                $"  {AppSettings.ModelsDir}");
+        }
+
         Status?.Invoke("Model laden…");
         _factory?.Dispose();
         try
@@ -72,14 +95,75 @@ public class Transcriber
         {
             // Beschadigd/onleesbaar model: verwijderen zodat het opnieuw wordt
             // gedownload, en een nette melding geven i.p.v. een crash.
-            try { File.Delete(modelPath); } catch { }
+            if (IsInDownloadDir(modelPath))
+                try { File.Delete(modelPath); } catch { }
             _factory = null;
             throw new InvalidOperationException(
                 "Het model kon niet geladen worden (mogelijk beschadigd of " +
-                "onvolledig gedownload). Het bestand is verwijderd — probeer het " +
-                "opnieuw, dan wordt het opnieuw opgehaald.\n\n(detail: " + ex.Message + ")", ex);
+                "onvolledig gedownload). Probeer het opnieuw of kies een ander " +
+                "model.\n\n(detail: " + ex.Message + ")", ex);
         }
         _loadedModel = modelSize;
+    }
+
+    private static bool IsInDownloadDir(string path)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(Path.GetFullPath(path));
+            return string.Equals(dir, Path.GetFullPath(AppSettings.ModelsDir),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Probeer het model te laden in een apart proces. Geeft true als dat lukte
+    /// (exitcode 0), false bij een fout/crash. Lukt het starten van het proces
+    /// niet, dan geven we true terug (liever doorgaan dan onterecht blokkeren).
+    /// </summary>
+    private static async Task<bool> ProbeModelInSeparateProcessAsync(string modelPath, CancellationToken ct)
+    {
+        try
+        {
+            var exe = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exe) || !File.Exists(exe)) return true;
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = exe,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("--probe-model");
+            psi.ArgumentList.Add(modelPath);
+
+            using var p = Process.Start(psi);
+            if (p == null) return true;
+            await p.WaitForExitAsync(ct);
+            return p.ExitCode == 0;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch { return true; }
+    }
+
+    /// <summary>
+    /// Test in dit (hulp)proces of een modelbestand laadbaar is. 0 = ok,
+    /// 3 = managed fout. Een native crash beëindigt het proces met een
+    /// crash-exitcode (≠0), wat de hoofd-app als "niet laadbaar" leest.
+    /// </summary>
+    public static int ProbeModelFile(string path)
+    {
+        try
+        {
+            using var factory = WhisperFactory.FromPath(path);
+            using var processor = factory.CreateBuilder().WithLanguage("auto").Build();
+            return 0;
+        }
+        catch
+        {
+            return 3;
+        }
     }
 
     /// <summary>Controleer of een bestand een geldig ggml/GGUF-model lijkt.</summary>
@@ -93,17 +177,15 @@ public class Transcriber
             var b = new byte[4];
             if (fs.Read(b, 0, 4) < 4) return false;
 
-            // ggml-magic (0x67676d6c) kan in beide byte-volgordes op schijf staan
-            // ("ggml" of, little-endian, "lmgg"); GGUF = "GGUF".
+            // Vereis een echte modelheader. ggml-magic (0x67676d6c) kan in beide
+            // byte-volgordes op schijf staan ("ggml" of, little-endian, "lmgg");
+            // GGUF = "GGUF". Een bestand zonder geldige magic NIET accepteren:
+            // een corrupt/onvolledig bestand laat de native lader anders hard
+            // crashen (niet op te vangen in .NET).
             bool ggml = (b[0] == 0x67 && b[1] == 0x67 && b[2] == 0x6d && b[3] == 0x6c) ||
                         (b[0] == 0x6c && b[1] == 0x6d && b[2] == 0x67 && b[3] == 0x67);
             bool gguf = b[0] == 0x47 && b[1] == 0x47 && b[2] == 0x55 && b[3] == 0x46;
-            if (ggml || gguf) return true;
-
-            // Geen herkenbare magic, maar wel een groot, niet-HTML bestand (dus
-            // geen foutpagina/pointer): voor de zekerheid toch accepteren. Een
-            // foutpagina begint met '<' en is bovendien klein (< minSize).
-            return b[0] != (byte)'<';
+            return ggml || gguf;
         }
         catch { return false; }
     }
