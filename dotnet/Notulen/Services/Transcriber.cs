@@ -194,14 +194,49 @@ public class Transcriber
         // verwijderen en een nette melding geven i.p.v. een crash.
         if (!LooksLikeModel(path, minSize))
         {
+            var diag = DescribeBadModel(path, minSize);
             try { File.Delete(path); } catch { }
             throw new InvalidOperationException(
-                "De download van het model lijkt mislukt of beschadigd " +
-                $"('{file}'). Controleer de internetverbinding en probeer opnieuw. " +
-                "Lukt het downloaden niet (afgeschermd netwerk)? Plaats het bestand " +
-                $"'{file}' dan handmatig in:\n{AppSettings.ModelsDir}");
+                $"De download van '{file}' is niet het juiste modelbestand.\n{diag}\n\n" +
+                "Lost opnieuw proberen het niet op? Download het model dan handmatig " +
+                "(bijv. in je browser of op een ander netwerk) en plaats het hier:\n" +
+                $"{AppSettings.ModelsDir}\n\n" +
+                $"Directe link:\n{baseUrl}/{file}");
         }
         return path;
+    }
+
+    /// <summary>Beschrijf kort wat er mis is met een afgekeurd modelbestand,
+    /// zodat een netwerk-/proxyprobleem herkenbaar is.</summary>
+    private static string DescribeBadModel(string path, long minSize)
+    {
+        try
+        {
+            var fi = new FileInfo(path);
+            long len = fi.Exists ? fi.Length : 0;
+            string mb = $"{len / 1048576.0:0.0} MB (verwacht ≥ {minSize / 1048576} MB)";
+
+            // Eerste bytes lezen om HTML-/foutpagina of LFS-pointer te herkennen.
+            string head = "";
+            using (var fs = File.OpenRead(path))
+            {
+                var b = new byte[256];
+                int n = fs.Read(b, 0, b.Length);
+                head = Encoding.ASCII.GetString(b, 0, Math.Max(0, n));
+            }
+            var h = head.TrimStart();
+            if (h.StartsWith("<") || h.Contains("<html", StringComparison.OrdinalIgnoreCase))
+                return $"Er kwam een webpagina terug i.p.v. het model ({mb}). " +
+                       "Waarschijnlijk blokkeert een firewall/proxy/antivirus de download.";
+            if (h.StartsWith("version https://git-lfs"))
+                return $"Er kwam een Git-LFS-verwijzing terug i.p.v. het model ({mb}). " +
+                       "De server gaf niet het echte bestand vrij.";
+            return $"Het bestand is te klein/onvolledig: {mb}.";
+        }
+        catch
+        {
+            return "Het bestand kon niet gecontroleerd worden.";
+        }
     }
 
     /// <summary>
@@ -214,6 +249,11 @@ public class Transcriber
         const int maxAttempts = 6;
         // Eén HttpClient hergebruiken over de pogingen heen.
         using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        // Sommige CDN's (Cloudflare voor de Hugging Face LFS-bestanden) geven
+        // zonder herkenbare User-Agent een kleine challenge-/foutpagina terug
+        // i.p.v. het bestand. Een nette User-Agent voorkomt dat.
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Scriba/1.0 (+https://github.com/Gimpabompie/Scriba)");
+        http.DefaultRequestHeaders.Accept.ParseAdd("application/octet-stream");
         var sw = Stopwatch.StartNew();
         var lastReport = TimeSpan.FromSeconds(-1);
         long total = -1L;
